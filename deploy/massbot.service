@@ -1,0 +1,19 @@
+[Unit]
+Description=Massbot mini app (FastAPI + Telegram bot + Cloudflare Tunnel)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=massbot
+Group=massbot
+WorkingDirectory=/opt/massbot
+EnvironmentFile=/etc/massbot.env
+ExecStart=/opt/massbot/deploy/start.sh
+Restart=always
+RestartSec=5
+# systemd по умолчанию убивает всю control-group сервиса (bash + cloudflared +
+# uvicorn) при stop/restart — отдельно останавливать туннель не нужно.
+
+[Install]
+WantedBy=multi-user.target

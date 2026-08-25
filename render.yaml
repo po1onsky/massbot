@@ -1,0 +1,26 @@
+# Render Blueprint — деплой в один клик из GitHub.
+# render.com → New → Blueprint → выбрать репозиторий с этим файлом в корне.
+# Секреты (BOT_TOKEN, PUBLIC_URL) Render попросит ввести в интерфейсе,
+# в git они не попадают.
+services:
+  - type: web
+    name: massbot-miniapp
+    runtime: python
+    plan: starter # нужен платный план — на free нет постоянного диска, база будет слетать
+    buildCommand: "pip install -r requirements.txt && cd frontend && npm install && npm run build"
+    startCommand: "uvicorn api:app --host 0.0.0.0 --port $PORT"
+    envVars:
+      - key: BOT_TOKEN
+        sync: false
+      - key: PUBLIC_URL
+        sync: false
+      - key: TZ_NAME
+        value: Europe/Moscow
+      - key: DB_PATH
+        value: /data/massbot.db
+      - key: DEV_MODE
+        value: "0"
+    disk:
+      name: massbot-data
+      mountPath: /data
+      sizeGB: 1
