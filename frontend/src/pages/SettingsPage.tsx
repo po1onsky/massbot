@@ -1,25 +1,69 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { hapticNotify } from "../telegram";
-import type { MePayload } from "../types";
+import type { Equipment, Experience, Goal, MePayload } from "../types";
 
 const DAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
-export default function SettingsPage() {
+function ChoiceRow<T extends string>({
+  options,
+  value,
+  onChange,
+}: {
+  options: { value: T; label: string }[];
+  value: T;
+  onChange: (v: T) => void;
+}) {
+  return (
+    <div className="choice-grid">
+      {options.map((o) => (
+        <button
+          key={o.value}
+          className={`choice-toggle ${value === o.value ? "selected" : ""}`}
+          onClick={() => onChange(o.value)}
+        >
+          {o.label}
+        </button>
+      ))}
+    </div>
+  );
+}
+
+export default function SettingsPage({ onProfileChanged }: { onProfileChanged: () => void }) {
   const [me, setMe] = useState<MePayload | null>(null);
   const [days, setDays] = useState<Set<number>>(new Set());
   const [error, setError] = useState<string | null>(null);
   const [saved, setSaved] = useState(false);
 
-  useEffect(() => {
+  const [goalOpen, setGoalOpen] = useState(false);
+  const [goal, setGoal] = useState<Goal>("gain");
+  const [targetWeight, setTargetWeight] = useState("");
+  const [targetWeeks, setTargetWeeks] = useState("");
+  const [goalMsg, setGoalMsg] = useState<string | null>(null);
+  const [goalBusy, setGoalBusy] = useState(false);
+
+  const [programOpen, setProgramOpen] = useState(false);
+  const [equipment, setEquipment] = useState<Equipment>("gym");
+  const [experience, setExperience] = useState<Experience>("experienced");
+  const [programMsg, setProgramMsg] = useState<string | null>(null);
+  const [programBusy, setProgramBusy] = useState(false);
+
+  function load() {
     api
       .me()
       .then((m) => {
         setMe(m);
         setDays(new Set(m.training_days.split(",").map(Number)));
+        setGoal(m.goal || "gain");
+        setTargetWeight(String(m.goal_weight || ""));
+        setTargetWeeks(m.target_weeks ? String(m.target_weeks) : "");
+        setEquipment(m.equipment);
+        setExperience(m.experience);
       })
       .catch((e: ApiError) => setError(e.message));
-  }, []);
+  }
+
+  useEffect(load, []);
 
   function toggle(idx: number) {
     setSaved(false);
@@ -38,6 +82,43 @@ export default function SettingsPage() {
       hapticNotify("success");
     } catch (e) {
       setError((e as ApiError).message);
+    }
+  }
+
+  async function saveGoal() {
+    const tw = parseFloat(targetWeight.replace(",", "."));
+    if (isNaN(tw)) return;
+    const weeks = targetWeeks ? parseInt(targetWeeks, 10) : null;
+    setGoalBusy(true);
+    setGoalMsg(null);
+    try {
+      const res = await api.setGoal(goal, tw, weeks);
+      setGoalMsg(res.warning ? `⚠️ ${res.warning}` : "Цель обновлена ✅");
+      hapticNotify("success");
+      onProfileChanged();
+      load();
+    } catch (e) {
+      setGoalMsg((e as ApiError).message);
+      hapticNotify("error");
+    } finally {
+      setGoalBusy(false);
+    }
+  }
+
+  async function saveProgram() {
+    setProgramBusy(true);
+    setProgramMsg(null);
+    try {
+      await api.setProgram(equipment, experience, Array.from(days), {});
+      setProgramMsg("Программа пересобрана ✅");
+      hapticNotify("success");
+      onProfileChanged();
+      load();
+    } catch (e) {
+      setProgramMsg((e as ApiError).message);
+      hapticNotify("error");
+    } finally {
+      setProgramBusy(false);
     }
   }
 
@@ -60,10 +141,13 @@ export default function SettingsPage() {
         </div>
         <div className="row">
           <span className="label">День программы</span>
-          <span className="value">{me.day_number + 1} из 270</span>
+          <span className="value">
+            {me.day_number + 1}
+            {me.total_days ? ` из ${me.total_days}` : ""}
+          </span>
         </div>
         <div className="row">
-          <span className="label">Фаза</span>
+          <span className="label">Этап</span>
           <span className="value">{me.phase_name}</span>
         </div>
       </div>
@@ -87,6 +171,89 @@ export default function SettingsPage() {
         <button className="btn" style={{ marginTop: 12 }} onClick={save}>
           {saved ? "Сохранено ✅" : "Сохранить"}
         </button>
+      </div>
+
+      <div className="card">
+        <h3>Изменить цель</h3>
+        {!goalOpen ? (
+          <button className="btn secondary" onClick={() => setGoalOpen(true)}>
+            Открыть
+          </button>
+        ) : (
+          <div className="stack">
+            <ChoiceRow
+              options={[
+                { value: "gain" as Goal, label: "Набрать вес" },
+                { value: "lose" as Goal, label: "Сбросить вес" },
+              ]}
+              value={goal}
+              onChange={setGoal}
+            />
+            <div className="btn-row">
+              <input
+                type="number"
+                inputMode="decimal"
+                placeholder="Целевой вес, кг"
+                value={targetWeight}
+                onChange={(e) => setTargetWeight(e.target.value)}
+              />
+              <input
+                type="number"
+                inputMode="numeric"
+                placeholder="Срок, недель"
+                value={targetWeeks}
+                onChange={(e) => setTargetWeeks(e.target.value)}
+              />
+            </div>
+            <p className="hint">
+              Калории пересчитаются от твоего последнего веса, отсчёт срока начнётся заново — история
+              взвешиваний и тренировок не трогается.
+            </p>
+            {goalMsg && <p className="hint">{goalMsg}</p>}
+            <button className="btn" disabled={goalBusy} onClick={saveGoal}>
+              {goalBusy ? "Считаю…" : "Пересчитать"}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className="card">
+        <h3>Изменить программу</h3>
+        {!programOpen ? (
+          <button className="btn secondary" onClick={() => setProgramOpen(true)}>
+            Открыть
+          </button>
+        ) : (
+          <div className="stack">
+            <div className="hint">Оборудование</div>
+            <ChoiceRow
+              options={[
+                { value: "gym" as Equipment, label: "Зал" },
+                { value: "dumbbell" as Equipment, label: "Гантели дома" },
+                { value: "none" as Equipment, label: "Без оборудования" },
+              ]}
+              value={equipment}
+              onChange={setEquipment}
+            />
+            <div className="hint">Опыт</div>
+            <ChoiceRow
+              options={[
+                { value: "beginner" as Experience, label: "Новичок" },
+                { value: "experienced" as Experience, label: "Есть опыт" },
+              ]}
+              value={experience}
+              onChange={setExperience}
+            />
+            <p className="hint">
+              Сплит пересоберётся под выбранные дни тренировок (вкладка выше) и оборудование. Прогресс в
+              упражнениях, которые останутся в программе, сохранится.
+            </p>
+            {programMsg && <p className="hint">{programMsg}</p>}
+            <button className="btn" disabled={programBusy} onClick={saveProgram}>
+              {programBusy ? "Собираю…" : "Пересобрать программу"}
+            </button>
+          </div>
+        )}
       </div>
     </div>
   );

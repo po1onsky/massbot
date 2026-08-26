@@ -41,11 +41,19 @@ def _webapp_markup() -> Optional[InlineKeyboardMarkup]:
 
 async def cmd_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE):
     u = core.ensure_user(update.effective_chat.id, update.effective_user.first_name if update.effective_user else None)
-    text = (
-        f"Погнали. Старт {u['start_date']}, {u['start_weight']:g} кг → цель {u['goal_weight']:g} кг за 9 месяцев.\n\n"
-        "Всё в приложении: тренировка на сегодня, запись подходов, вес, статистика, питание, добавки.\n"
-        "Открывай кнопкой ниже или через меню чата (значок рядом со скрепкой)."
-    )
+    if not u["onboarded"]:
+        text = (
+            "Погнали. Сначала — пара вопросов в приложении (рост, вес, цель, "
+            "оборудование), это займёт минуту, дальше программа и калории "
+            "считаются сами.\n\nОткрывай кнопкой ниже или через меню чата."
+        )
+    else:
+        weeks_part = f" за {u['target_weeks']} нед." if u["target_weeks"] else ""
+        text = (
+            f"Погнали. Старт {u['start_date']}, {u['start_weight']:g} кг → цель {u['goal_weight']:g} кг{weeks_part}.\n\n"
+            "Всё в приложении: тренировка на сегодня, запись подходов, вес, статистика, питание, добавки.\n"
+            "Открывай кнопкой ниже или через меню чата (значок рядом со скрепкой)."
+        )
     await update.message.reply_text(text, reply_markup=_webapp_markup())
 
 

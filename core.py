@@ -5,6 +5,7 @@
 только данные и SQLite.
 """
 
+import json
 import os
 import sqlite3
 import datetime as dt
@@ -15,10 +16,11 @@ from program import (
     PHASES,
     SUPPLEMENTS,
     SHAKE,
-    START_WEIGHT,
-    GOAL_WEIGHT,
+    FOOD_CATALOG,
+    BEGINNER_START,
     phase_for_day,
     planned_weight,
+    generate_workout_templates,
 )
 
 TZ = ZoneInfo(os.environ.get("TZ_NAME", "Europe/Moscow"))
@@ -63,13 +65,64 @@ def init_db() -> None:
             chat_id INTEGER, date TEXT,
             PRIMARY KEY (chat_id, date)
         );
+        CREATE TABLE IF NOT EXISTS foods (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            owner_chat_id INTEGER,
+            name TEXT NOT NULL,
+            protein REAL NOT NULL,
+            fat REAL NOT NULL,
+            carbs REAL NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS food_log (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            chat_id INTEGER NOT NULL,
+            date TEXT NOT NULL,
+            food_id INTEGER,
+            grams REAL,
+            kcal REAL NOT NULL,
+            protein REAL NOT NULL,
+            fat REAL NOT NULL,
+            carbs REAL NOT NULL,
+            label TEXT
+        );
         """
     )
-    # на случай апгрейда со старой версии базы без колонки first_name
+    # Миграции для баз, созданных до появления новых колонок/онбординга.
+    # Всем существующим строкам onboarded проставляется 1 (DEFAULT) — их
+    # текущая программа (легаси PHASES) продолжает работать как раньше;
+    # новые пользователи создаются явно с onboarded=0 (см. ensure_user).
     cols = {r["name"] for r in db.execute("PRAGMA table_info(users)")}
-    if "first_name" not in cols:
-        db.execute("ALTER TABLE users ADD COLUMN first_name TEXT")
+    migrations = [
+        ("first_name", "TEXT"),
+        ("sex", "TEXT"),
+        ("height_cm", "REAL"),
+        ("age", "INTEGER"),
+        ("goal", "TEXT"),
+        ("target_weeks", "INTEGER"),
+        ("equipment", "TEXT NOT NULL DEFAULT 'gym'"),
+        ("experience", "TEXT NOT NULL DEFAULT 'experienced'"),
+        ("onboarded", "INTEGER NOT NULL DEFAULT 1"),
+        ("program_json", "TEXT"),
+        ("kcal_base", "INTEGER"),
+        ("protein_g", "INTEGER"),
+        ("fat_g", "INTEGER"),
+        ("carbs_g", "INTEGER"),
+    ]
+    for name, decl in migrations:
+        if name not in cols:
+            db.execute(f"ALTER TABLE users ADD COLUMN {name} {decl}")
     db.commit()
+    seed_foods_if_empty()
+
+
+def seed_foods_if_empty() -> None:
+    n = db.execute("SELECT COUNT(*) c FROM foods WHERE owner_chat_id IS NULL").fetchone()["c"]
+    if n == 0:
+        db.executemany(
+            "INSERT INTO foods (owner_chat_id, name, protein, fat, carbs) VALUES (NULL,?,?,?,?)",
+            FOOD_CATALOG,
+        )
+        db.commit()
 
 
 def today_str() -> str:
@@ -88,10 +141,13 @@ def get_user(chat_id: int):
 def ensure_user(chat_id: int, first_name: Optional[str] = None):
     u = get_user(chat_id)
     if u is None:
+        # Новый пользователь: onboarded=0 — программу и цель он ещё не задал,
+        # фронтенд покажет визард настройки вместо дашборда. start/goal_weight
+        # тут просто заглушки, онбординг их сразу перезапишет.
         db.execute(
-            "INSERT INTO users (chat_id, start_date, start_weight, goal_weight, training_days, first_name)"
-            " VALUES (?,?,?,?,?,?)",
-            (chat_id, today_str(), START_WEIGHT, GOAL_WEIGHT, DEFAULT_TRAINING_DAYS, first_name),
+            "INSERT INTO users (chat_id, start_date, start_weight, goal_weight, training_days, first_name, onboarded)"
+            " VALUES (?,?,?,?,?,?,0)",
+            (chat_id, today_str(), 0.0, 0.0, DEFAULT_TRAINING_DAYS, first_name),
         )
         db.commit()
         u = get_user(chat_id)
@@ -107,28 +163,72 @@ def day_number(u) -> int:
     return (today_date() - start).days
 
 
+def is_new_style(u) -> bool:
+    return u["program_json"] is not None
+
+
 def current_phase(u):
+    """Легаси: индекс/данные фазы из статичной PHASES-программы."""
     idx = phase_for_day(day_number(u))
     return idx, PHASES[idx]
 
 
-def is_deload(u, phase_idx: int) -> bool:
-    phase = PHASES[phase_idx]
+def current_phase_idx(u) -> int:
+    if is_new_style(u):
+        return 0  # у сгенерированной программы одна непрерывная "фаза"
+    idx = phase_for_day(day_number(u))
+    return idx
+
+
+def get_program_days(u) -> list:
+    if is_new_style(u):
+        return json.loads(u["program_json"])
+    _, phase = current_phase(u)
+    return phase["days"]
+
+
+def phase_display(u) -> str:
+    if is_new_style(u):
+        week = day_number(u) // 7 + 1
+        total_weeks = u["target_weeks"]
+        if total_weeks:
+            return f"Неделя {week} из {total_weeks}"
+        return f"Неделя {week}"
+    _, phase = current_phase(u)
+    return phase["name"]
+
+
+def total_days_horizon(u) -> Optional[int]:
+    """Общая длина программы в днях — для отображения «день N из M». None — открытый срок."""
+    if is_new_style(u):
+        return u["target_weeks"] * 7 if u["target_weeks"] else None
+    return 270
+
+
+def is_deload(u) -> bool:
+    if is_new_style(u):
+        # Единое правило вместо привязки к конкретной фазе: каждая 4-я неделя
+        # от старта программы — разгрузочная, независимо от сплита/цели.
+        week = day_number(u) // 7
+        return week % 4 == 3
+    idx = current_phase_idx(u)
+    phase = PHASES[idx]
     every = phase.get("deload_every", 0)
     if not every:
         return False
-    phase_start_day = [0, 90, 180][phase_idx]
+    phase_start_day = [0, 90, 180][idx]
     week_in_phase = max(0, (day_number(u) - phase_start_day)) // 7
     return week_in_phase % every == every - 1
 
 
-def next_day_plan(u, phase_idx: int):
-    """Какая тренировка по счёту в этой фазе."""
+def next_day_plan(u):
+    """Какая тренировка по счёту в программе (по факту записанных тренировок)."""
+    idx = current_phase_idx(u)
     n = db.execute(
         "SELECT COUNT(*) c FROM sessions WHERE chat_id=? AND phase=?",
-        (u["chat_id"], phase_idx),
+        (u["chat_id"], idx),
     ).fetchone()["c"]
-    days = PHASES[phase_idx]["days"]
+    days = get_program_days(u)
     return days[n % len(days)]
 
 
@@ -250,14 +350,13 @@ def exercise_view(chat_id: int, e: dict, deload: bool) -> dict:
 
 
 def today_payload(u) -> dict:
-    idx, phase = current_phase(u)
-    day = next_day_plan(u, idx)
-    deload = is_deload(u, idx)
+    day = next_day_plan(u)
+    deload = is_deload(u)
     return {
         "day_title": day["title"],
         "day_code": day["code"],
-        "phase_index": idx,
-        "phase_name": phase["name"],
+        "phase_index": current_phase_idx(u),
+        "phase_name": phase_display(u),
         "day_number": day_number(u) + 1,
         "deload": deload,
         "logged_today": has_session_today(u["chat_id"]),
@@ -267,9 +366,9 @@ def today_payload(u) -> dict:
 
 def log_workout(u, entries: list, skipped: list) -> dict:
     """entries: [{key, weight, reps:[int,...]}]. Возвращает заметки по каждому упражнению."""
-    idx, _ = current_phase(u)
-    day = next_day_plan(u, idx)
-    deload = is_deload(u, idx)
+    idx = current_phase_idx(u)
+    day = next_day_plan(u)
+    deload = is_deload(u)
     chat_id = u["chat_id"]
 
     cur = db.execute(
@@ -308,8 +407,22 @@ def log_workout(u, entries: list, skipped: list) -> dict:
     return {"session_id": session_id, "notes": notes}
 
 
+def planned_weight_for(u, d: int) -> float:
+    """Плановый вес на N-й день программы — обобщённая версия planned_weight()
+    для сгенерированных (не легаси) программ: линейная интерполяция от
+    старта к цели за target_weeks. Без срока (открытая цель) — держим старт."""
+    if not is_new_style(u):
+        return planned_weight(d)
+    weeks = u["target_weeks"]
+    start, goal = u["start_weight"], u["goal_weight"]
+    if not weeks:
+        return start
+    total_days = weeks * 7
+    frac = min(1.0, max(0.0, d / total_days)) if total_days else 1.0
+    return round(start + (goal - start) * frac, 1)
+
+
 def me_payload(u) -> dict:
-    idx, phase = current_phase(u)
     return {
         "chat_id": u["chat_id"],
         "first_name": u["first_name"],
@@ -317,11 +430,20 @@ def me_payload(u) -> dict:
         "start_weight": u["start_weight"],
         "goal_weight": u["goal_weight"],
         "day_number": day_number(u),
-        "phase_index": idx,
-        "phase_name": phase["name"],
-        "deload": is_deload(u, idx),
+        "total_days": total_days_horizon(u),
+        "phase_index": current_phase_idx(u),
+        "phase_name": phase_display(u),
+        "deload": is_deload(u),
         "kcal_offset": u["kcal_offset"],
         "training_days": u["training_days"],
+        "onboarded": bool(u["onboarded"]),
+        "goal": u["goal"],
+        "target_weeks": u["target_weeks"],
+        "sex": u["sex"],
+        "height_cm": u["height_cm"],
+        "age": u["age"],
+        "equipment": u["equipment"],
+        "experience": u["experience"],
     }
 
 
@@ -329,7 +451,6 @@ def stats_payload(u) -> dict:
     wm = weight_map(u["chat_id"])
     today = today_date()
     d = day_number(u)
-    idx, phase = current_phase(u)
     ses = db.execute(
         "SELECT COUNT(*) c FROM sessions WHERE chat_id=?", (u["chat_id"],)
     ).fetchone()["c"]
@@ -338,18 +459,20 @@ def stats_payload(u) -> dict:
         return {
             "has_data": False,
             "day_number": d + 1,
-            "phase_name": phase["name"],
+            "total_days": total_days_horizon(u),
+            "phase_name": phase_display(u),
             "sessions_logged": ses,
         }
 
     last_date = max(wm)
     last = wm[last_date]
     avg = window_avg(wm, today)
-    plan = planned_weight(d)
+    plan = planned_weight_for(u, d)
     return {
         "has_data": True,
         "day_number": d + 1,
-        "phase_name": phase["name"],
+        "total_days": total_days_horizon(u),
+        "phase_name": phase_display(u),
         "last_weight": last,
         "last_date": last_date,
         "avg7": round(avg, 2) if avg else None,
@@ -372,8 +495,9 @@ def plot_payload(u) -> dict:
         for i in range(len(ys))
     ]
     start = dt.date.fromisoformat(u["start_date"])
-    plan_dates = [(start + dt.timedelta(days=i)).isoformat() for i in range(0, 271, 5)]
-    plan_weights = [planned_weight(i) for i in range(0, 271, 5)]
+    horizon = total_days_horizon(u) or 90
+    plan_dates = [(start + dt.timedelta(days=i)).isoformat() for i in range(0, horizon + 1, 5)]
+    plan_weights = [planned_weight_for(u, i) for i in range(0, horizon + 1, 5)]
     return {
         "dates": dates,
         "weights": ys,
@@ -386,6 +510,17 @@ def plot_payload(u) -> dict:
 
 
 def food_payload(u) -> dict:
+    if is_new_style(u) and u["kcal_base"] is not None:
+        kcal = u["kcal_base"] + u["kcal_offset"]
+        return {
+            "phase_name": phase_display(u),
+            "kcal": kcal,
+            "kcal_offset": u["kcal_offset"],
+            "protein": u["protein_g"],
+            "fat": u["fat_g"],
+            "carbs": u["carbs_g"],
+            "shake": SHAKE,
+        }
     _, phase = current_phase(u)
     kcal = phase["kcal"] + u["kcal_offset"]
     return {
@@ -444,6 +579,28 @@ def set_training_days(u, days: list) -> str:
 
 
 def plan_payload(u) -> dict:
+    if is_new_style(u):
+        months_text = f"{u['target_weeks']} нед." if u["target_weeks"] else "без ограничения по срокам"
+        kcal = (u["kcal_base"] or 0) + u["kcal_offset"]
+        return {
+            "start_weight": u["start_weight"],
+            "goal_weight": u["goal_weight"],
+            "duration_text": months_text,
+            "phases": [
+                {
+                    "index": 0,
+                    "current": True,
+                    "name": "Твоя программа",
+                    "months": months_text,
+                    "kcal": kcal,
+                    "protein": u["protein_g"],
+                    "fat": u["fat_g"],
+                    "carbs": u["carbs_g"],
+                    "note": "Разгрузка каждую 4-ю неделю: веса 60%, подходов вдвое меньше.",
+                    "days": get_program_days(u),
+                }
+            ],
+        }
     idx, _ = current_phase(u)
     phases = []
     for i, p in enumerate(PHASES):
@@ -471,11 +628,17 @@ def plan_payload(u) -> dict:
                 ],
             }
         )
-    return {"start_weight": u["start_weight"], "goal_weight": u["goal_weight"], "phases": phases}
+    return {
+        "start_weight": u["start_weight"],
+        "goal_weight": u["goal_weight"],
+        "duration_text": "9 месяцев",
+        "phases": phases,
+    }
 
 
 def users_with_reminders():
-    return db.execute("SELECT * FROM users WHERE reminders=1").fetchall()
+    # onboarded=1 — не дёргаем напоминаниями тех, кто ещё не прошёл настройку
+    return db.execute("SELECT * FROM users WHERE reminders=1 AND onboarded=1").fetchall()
 
 
 def has_session_today(chat_id: int) -> bool:
@@ -484,3 +647,218 @@ def has_session_today(chat_id: int) -> bool:
             "SELECT 1 FROM sessions WHERE chat_id=? AND date=?", (chat_id, today_str())
         ).fetchone()
     )
+
+
+# ===================================================================
+# Онбординг: рост/пол/возраст → калории по формуле, цель (набор/сброс) +
+# срок → проверка реалистичности скорости, оборудование/опыт/дни → сплит
+# из program.generate_workout_templates(). Легаси-пользователи (у которых
+# program_json уже пуст) этот путь не проходят и не затрагиваются.
+# ===================================================================
+
+SEX_MULT = {"male": 5, "female": -161}
+
+
+def bmr_tdee(sex: str, weight: float, height_cm: float, age: int, training_days_count: int, active_job: bool) -> float:
+    bmr = 10 * weight + 6.25 * height_cm - 5 * age + SEX_MULT.get(sex, -78)
+    base_mult = 1.35 if active_job else 1.2
+    mult = min(1.9, base_mult + 0.05 * training_days_count)
+    return bmr * mult
+
+
+def calc_calorie_target(sex, weight, height_cm, age, training_days_count, active_job, goal):
+    tdee = bmr_tdee(sex, weight, height_cm, age, training_days_count, active_job)
+    factor = 1.15 if goal == "gain" else 0.82
+    kcal = round(tdee * factor / 50) * 50
+    protein_g = round(weight * 1.8)
+    fat_g = round(weight * 0.9)
+    carbs_kcal = kcal - protein_g * 4 - fat_g * 9
+    carbs_g = max(50, round(carbs_kcal / 4))
+    return kcal, protein_g, fat_g, carbs_g
+
+
+def evaluate_goal_rate(goal: str, current_weight: float, target_weight: float, weeks: Optional[int]):
+    """Возвращает (кг/нед, текст предупреждения|None). Не блокирует — только предупреждает."""
+    delta = abs(target_weight - current_weight)
+    if not weeks or weeks <= 0 or delta == 0:
+        return 0.0, None
+    rate = delta / weeks
+    pct = rate / current_weight * 100
+    safe_max_pct = 0.5 if goal == "gain" else 0.8
+    warning = None
+    if pct > safe_max_pct:
+        min_weeks = max(1, round(delta / (current_weight * safe_max_pct / 100)))
+        warning = (
+            f"Это ≈{rate:.2f} кг/нед ({pct:.1f}% веса в неделю). Обычно безопасно "
+            f"до {safe_max_pct:.1f}%/нед — комфортнее растянуть срок примерно до {min_weeks} нед."
+        )
+    return round(rate, 2), warning
+
+
+def _apply_program(chat_id: int, equipment: str, training_days: list, experience: str, starting_weights: Optional[dict] = None) -> list:
+    days_count = max(1, len(training_days))
+    program_days = generate_workout_templates(equipment, days_count)
+    db.execute(
+        "UPDATE users SET program_json=? WHERE chat_id=?",
+        (json.dumps(program_days, ensure_ascii=False), chat_id),
+    )
+    starting = starting_weights or {}
+    seen = set()
+    for d in program_days:
+        for e in d["exercises"]:
+            if e["key"] in seen or e["kind"] != "weight":
+                continue
+            seen.add(e["key"])
+            w = starting.get(e["key"]) if experience == "experienced" else BEGINNER_START.get((e["key"], equipment))
+            if w:
+                # INSERT OR IGNORE — не затираем уже накопленный прогресс, если
+                # это упражнение у пользователя встречалось и раньше.
+                db.execute(
+                    "INSERT OR IGNORE INTO ex_state (chat_id, ex_key, working_weight, fail_streak) VALUES (?,?,?,0)",
+                    (chat_id, e["key"], w),
+                )
+    db.commit()
+    return program_days
+
+
+def complete_onboarding(chat_id: int, data: dict) -> dict:
+    training_days = sorted({int(d) for d in data["training_days"] if 0 <= int(d) <= 6})
+    training_days_val = ",".join(map(str, training_days)) or DEFAULT_TRAINING_DAYS
+    days_count = max(1, len(training_days))
+
+    kcal, protein_g, fat_g, carbs_g = calc_calorie_target(
+        data["sex"], data["current_weight"], data["height_cm"], data["age"],
+        days_count, data["active_job"], data["goal"],
+    )
+
+    db.execute(
+        """UPDATE users SET
+            start_date=?, start_weight=?, goal_weight=?, sex=?, height_cm=?, age=?,
+            goal=?, target_weeks=?, equipment=?, experience=?, training_days=?,
+            kcal_base=?, protein_g=?, fat_g=?, carbs_g=?, kcal_offset=0, onboarded=1
+        WHERE chat_id=?""",
+        (
+            today_str(), data["current_weight"], data["target_weight"], data["sex"],
+            data["height_cm"], data["age"], data["goal"], data.get("target_weeks"),
+            data["equipment"], data["experience"], training_days_val,
+            kcal, protein_g, fat_g, carbs_g, chat_id,
+        ),
+    )
+    db.commit()
+
+    _apply_program(chat_id, data["equipment"], training_days, data["experience"], data.get("starting_weights"))
+
+    u = get_user(chat_id)
+    rate, warning = evaluate_goal_rate(
+        data["goal"], data["current_weight"], data["target_weight"], data.get("target_weeks")
+    )
+    return {
+        "me": me_payload(u),
+        "today": today_payload(u),
+        "rate_per_week": rate,
+        "warning": warning,
+    }
+
+
+def update_goal(u, goal: str, target_weight: float, target_weeks: Optional[int]) -> dict:
+    """Меняет цель и срок, пересчитывает калории от текущего веса — историю
+    взвешиваний/тренировок не трогает, только целевую точку вперёд."""
+    wm = weight_map(u["chat_id"])
+    current = wm[max(wm)] if wm else u["start_weight"]
+    kcal, protein_g, fat_g, carbs_g = calc_calorie_target(
+        u["sex"] or "male", current, u["height_cm"] or 175, u["age"] or 30,
+        len((u["training_days"] or "0").split(",")), True, goal,
+    )
+    db.execute(
+        """UPDATE users SET goal=?, start_date=?, start_weight=?, goal_weight=?, target_weeks=?,
+           kcal_base=?, protein_g=?, fat_g=?, carbs_g=?, kcal_offset=0 WHERE chat_id=?""",
+        (goal, today_str(), current, target_weight, target_weeks, kcal, protein_g, fat_g, carbs_g, u["chat_id"]),
+    )
+    db.commit()
+    rate, warning = evaluate_goal_rate(goal, current, target_weight, target_weeks)
+    return {"me": me_payload(get_user(u["chat_id"])), "rate_per_week": rate, "warning": warning}
+
+
+def update_program(u, equipment: str, experience: str, training_days: list, starting_weights: Optional[dict] = None) -> dict:
+    training_days = sorted({int(d) for d in training_days if 0 <= int(d) <= 6})
+    training_days_val = ",".join(map(str, training_days)) or u["training_days"]
+    db.execute(
+        "UPDATE users SET training_days=?, equipment=?, experience=? WHERE chat_id=?",
+        (training_days_val, equipment, experience, u["chat_id"]),
+    )
+    db.commit()
+    _apply_program(u["chat_id"], equipment, training_days, experience, starting_weights)
+    return me_payload(get_user(u["chat_id"]))
+
+
+# ------------------------------------------------------------------ дневник питания
+def food_search(query: str, chat_id: int, limit: int = 20) -> list:
+    # SQLite LIKE регистронезависим только для ASCII — кириллицу приходится
+    # сравнивать в Python (str.lower() умеет её нормально); каталог маленький,
+    # так что тянуть всё и фильтровать на лету не проблема.
+    q = query.strip().lower()
+    rows = db.execute(
+        "SELECT id, owner_chat_id, name, protein, fat, carbs FROM foods"
+        " WHERE owner_chat_id IS NULL OR owner_chat_id=?",
+        (chat_id,),
+    ).fetchall()
+    if q:
+        rows = [r for r in rows if q in r["name"].lower()]
+    rows = sorted(rows, key=lambda r: (r["owner_chat_id"] is None, r["name"]))[:limit]
+    return [{"id": r["id"], "name": r["name"], "protein": r["protein"], "fat": r["fat"], "carbs": r["carbs"]} for r in rows]
+
+
+def add_custom_food(chat_id: int, name: str, protein: float, fat: float, carbs: float) -> int:
+    cur = db.execute(
+        "INSERT INTO foods (owner_chat_id, name, protein, fat, carbs) VALUES (?,?,?,?,?)",
+        (chat_id, name, protein, fat, carbs),
+    )
+    db.commit()
+    return cur.lastrowid
+
+
+def log_food_by_item(chat_id: int, food_id: int, grams: float) -> None:
+    f = db.execute("SELECT * FROM foods WHERE id=?", (food_id,)).fetchone()
+    if not f:
+        raise ValueError("продукт не найден")
+    factor = grams / 100.0
+    kcal = round((f["protein"] * 4 + f["fat"] * 9 + f["carbs"] * 4) * factor)
+    protein = round(f["protein"] * factor, 1)
+    fat = round(f["fat"] * factor, 1)
+    carbs = round(f["carbs"] * factor, 1)
+    db.execute(
+        "INSERT INTO food_log (chat_id, date, food_id, grams, kcal, protein, fat, carbs, label)"
+        " VALUES (?,?,?,?,?,?,?,?,?)",
+        (chat_id, today_str(), food_id, grams, kcal, protein, fat, carbs, f["name"]),
+    )
+    db.commit()
+
+
+def log_food_manual(chat_id: int, label: str, kcal: float, protein: float = 0, fat: float = 0, carbs: float = 0) -> None:
+    db.execute(
+        "INSERT INTO food_log (chat_id, date, food_id, grams, kcal, protein, fat, carbs, label)"
+        " VALUES (?,?,NULL,NULL,?,?,?,?,?)",
+        (chat_id, today_str(), kcal, protein, fat, carbs, label or "Приём пищи"),
+    )
+    db.commit()
+
+
+def food_log_today(chat_id: int) -> dict:
+    rows = db.execute(
+        "SELECT id, label, grams, kcal, protein, fat, carbs FROM food_log"
+        " WHERE chat_id=? AND date=? ORDER BY id",
+        (chat_id, today_str()),
+    ).fetchall()
+    entries = [dict(r) for r in rows]
+    totals = {
+        "kcal": round(sum(r["kcal"] for r in entries)),
+        "protein": round(sum(r["protein"] for r in entries), 1),
+        "fat": round(sum(r["fat"] for r in entries), 1),
+        "carbs": round(sum(r["carbs"] for r in entries), 1),
+    }
+    return {"entries": entries, "totals": totals}
+
+
+def delete_food_log(chat_id: int, entry_id: int) -> None:
+    db.execute("DELETE FROM food_log WHERE chat_id=? AND id=?", (chat_id, entry_id))
+    db.commit()

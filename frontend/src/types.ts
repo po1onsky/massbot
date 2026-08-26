@@ -28,6 +28,11 @@ export interface LogNote {
   working_weight: number | null;
 }
 
+export type Sex = "male" | "female";
+export type Goal = "gain" | "lose";
+export type Equipment = "gym" | "dumbbell" | "none";
+export type Experience = "beginner" | "experienced";
+
 export interface MePayload {
   chat_id: number;
   first_name: string | null;
@@ -35,16 +40,26 @@ export interface MePayload {
   start_weight: number;
   goal_weight: number;
   day_number: number;
+  total_days: number | null;
   phase_index: number;
   phase_name: string;
   deload: boolean;
   kcal_offset: number;
   training_days: string;
+  onboarded: boolean;
+  goal: Goal | null;
+  target_weeks: number | null;
+  sex: Sex | null;
+  height_cm: number | null;
+  age: number | null;
+  equipment: Equipment;
+  experience: Experience;
 }
 
 export interface StatsPayload {
   has_data: boolean;
   day_number: number;
+  total_days: number | null;
   phase_name: string;
   sessions_logged: number;
   last_weight?: number;
@@ -56,6 +71,57 @@ export interface StatsPayload {
   deviation?: number;
   weighings_count?: number;
   advice?: string;
+}
+
+export interface OnboardingIn {
+  sex: Sex;
+  height_cm: number;
+  age: number;
+  active_job: boolean;
+  goal: Goal;
+  current_weight: number;
+  target_weight: number;
+  target_weeks: number | null;
+  equipment: Equipment;
+  experience: Experience;
+  training_days: number[];
+  starting_weights: Record<string, number>;
+}
+
+export interface GoalResult {
+  me: MePayload;
+  rate_per_week: number;
+  warning: string | null;
+}
+
+export interface OnboardingResult {
+  me: MePayload;
+  today: TodayPayload;
+  rate_per_week: number;
+  warning: string | null;
+}
+
+export interface FoodItem {
+  id: number;
+  name: string;
+  protein: number;
+  fat: number;
+  carbs: number;
+}
+
+export interface FoodLogEntry {
+  id: number;
+  label: string;
+  grams: number | null;
+  kcal: number;
+  protein: number;
+  fat: number;
+  carbs: number;
+}
+
+export interface FoodLogPayload {
+  entries: FoodLogEntry[];
+  totals: { kcal: number; protein: number; fat: number; carbs: number };
 }
 
 export interface PlotPayload {
@@ -114,5 +180,6 @@ export interface PlanPhase {
 export interface PlanPayload {
   start_weight: number;
   goal_weight: number;
+  duration_text: string;
   phases: PlanPhase[];
 }

@@ -11,6 +11,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
+from typing import Optional
 
 from fastapi import Depends, FastAPI, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
@@ -176,6 +177,114 @@ def post_days(body: DaysIn, auth: AuthUser = Depends(get_current_user)):
     u = _user(auth)
     val = core.set_training_days(u, body.days)
     return {"training_days": val}
+
+
+# ------------------------------------------------------------------ онбординг / изменение цели и программы
+class OnboardingIn(BaseModel):
+    sex: str
+    height_cm: float
+    age: int
+    active_job: bool
+    goal: str
+    current_weight: float
+    target_weight: float
+    target_weeks: Optional[int] = None
+    equipment: str
+    experience: str
+    training_days: list[int]
+    starting_weights: dict[str, float] = {}
+
+
+@api.post("/onboarding")
+def post_onboarding(body: OnboardingIn, auth: AuthUser = Depends(get_current_user)):
+    u = _user(auth)
+    return core.complete_onboarding(u["chat_id"], body.model_dump())
+
+
+class GoalIn(BaseModel):
+    goal: str
+    target_weight: float
+    target_weeks: Optional[int] = None
+
+
+@api.post("/goal")
+def post_goal(body: GoalIn, auth: AuthUser = Depends(get_current_user)):
+    u = _user(auth)
+    return core.update_goal(u, body.goal, body.target_weight, body.target_weeks)
+
+
+class ProgramIn(BaseModel):
+    equipment: str
+    experience: str
+    training_days: list[int]
+    starting_weights: dict[str, float] = {}
+
+
+@api.post("/program")
+def post_program(body: ProgramIn, auth: AuthUser = Depends(get_current_user)):
+    u = _user(auth)
+    return core.update_program(u, body.equipment, body.experience, body.training_days, body.starting_weights)
+
+
+# ------------------------------------------------------------------ дневник питания
+@api.get("/food/search")
+def get_food_search(q: str = "", auth: AuthUser = Depends(get_current_user)):
+    u = _user(auth)
+    return core.food_search(q, u["chat_id"])
+
+
+@api.get("/food/log/today")
+def get_food_log_today(auth: AuthUser = Depends(get_current_user)):
+    u = _user(auth)
+    return core.food_log_today(u["chat_id"])
+
+
+class FoodLogItemIn(BaseModel):
+    food_id: int
+    grams: float
+
+
+@api.post("/food/log/item")
+def post_food_log_item(body: FoodLogItemIn, auth: AuthUser = Depends(get_current_user)):
+    u = _user(auth)
+    core.log_food_by_item(u["chat_id"], body.food_id, body.grams)
+    return core.food_log_today(u["chat_id"])
+
+
+class FoodLogManualIn(BaseModel):
+    label: str = ""
+    kcal: float
+    protein: float = 0
+    fat: float = 0
+    carbs: float = 0
+
+
+@api.post("/food/log/manual")
+def post_food_log_manual(body: FoodLogManualIn, auth: AuthUser = Depends(get_current_user)):
+    u = _user(auth)
+    core.log_food_manual(u["chat_id"], body.label, body.kcal, body.protein, body.fat, body.carbs)
+    return core.food_log_today(u["chat_id"])
+
+
+@api.delete("/food/log/{entry_id}")
+def delete_food_log_entry(entry_id: int, auth: AuthUser = Depends(get_current_user)):
+    u = _user(auth)
+    core.delete_food_log(u["chat_id"], entry_id)
+    return core.food_log_today(u["chat_id"])
+
+
+class CustomFoodIn(BaseModel):
+    name: str
+    protein: float
+    fat: float
+    carbs: float
+
+
+@api.post("/food/custom")
+def post_custom_food(body: CustomFoodIn, auth: AuthUser = Depends(get_current_user)):
+    u = _user(auth)
+    fid = core.add_custom_food(u["chat_id"], body.name, body.protein, body.fat, body.carbs)
+    return {"id": fid}
 
 
 app.mount("/api", api)

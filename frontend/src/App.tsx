@@ -6,6 +6,7 @@ import StatsPage from "./pages/StatsPage";
 import PlanPage from "./pages/PlanPage";
 import FoodPage from "./pages/FoodPage";
 import SettingsPage from "./pages/SettingsPage";
+import Onboarding from "./pages/Onboarding";
 import type { MePayload } from "./types";
 import { isInsideTelegram } from "./telegram";
 
@@ -26,7 +27,7 @@ export default function App() {
         <h1>
           {me?.first_name ? `Привет, ${me.first_name} 👋` : "Тренировки"}
         </h1>
-        {me && (
+        {me?.onboarded && (
           <div className="sub">
             {me.phase_name} · день {me.day_number + 1} · {me.start_weight} → {me.goal_weight} кг
           </div>
@@ -40,14 +41,16 @@ export default function App() {
 
       <main className="app-content">
         {error && <p className="hint">Ошибка: {error}</p>}
-        {tab === "today" && <TodayPage onLogged={refreshMe} />}
-        {tab === "stats" && <StatsPage />}
-        {tab === "plan" && <PlanPage />}
-        {tab === "food" && <FoodPage />}
-        {tab === "settings" && <SettingsPage />}
+        {!me && !error && <div className="loading">Загрузка…</div>}
+        {me && !me.onboarded && <Onboarding onDone={refreshMe} />}
+        {me?.onboarded && tab === "today" && <TodayPage onLogged={refreshMe} />}
+        {me?.onboarded && tab === "stats" && <StatsPage />}
+        {me?.onboarded && tab === "plan" && <PlanPage />}
+        {me?.onboarded && tab === "food" && <FoodPage />}
+        {me?.onboarded && tab === "settings" && <SettingsPage onProfileChanged={refreshMe} />}
       </main>
 
-      <NavBar active={tab} onChange={setTab} />
+      {me?.onboarded && <NavBar active={tab} onChange={setTab} />}
     </div>
   );
 }

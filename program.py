@@ -187,3 +187,192 @@ def planned_weight(day_number: int) -> float:
     if left > 0:  # программа кончилась — держим цель
         w = min(GOAL_WEIGHT, w)
     return round(w, 1)
+
+
+# ===================================================================
+# Генерируемая программа: для новых пользователей (после онбординга)
+# программа собирается из паттернов движения + доступного оборудования,
+# а не хранится готовым текстом. Легаси-PHASES выше не трогаем — старые
+# пользователи (program_json пуст) продолжают жить на них.
+#
+# equipment пользователя:
+#   "gym"      — зал, доступна штанга/тренажёры/гантели
+#   "dumbbell" — дома с гантелями
+#   "none"     — без оборудования, только свой вес
+# ===================================================================
+
+EXERCISE_POOL = {
+    "squat": [
+        {"equipment": "barbell", "name": "Приседания со штангой", "kind": "weight", "sets": 3, "reps": 6, "step": 5.0},
+        {"equipment": "dumbbell", "name": "Присед с гантелью (гоблет)", "kind": "weight", "sets": 3, "reps": 10, "step": 2.0},
+        {"equipment": "none", "name": "Приседания с своим весом", "kind": "bodyweight", "sets": 3, "reps": 20, "step": 0},
+    ],
+    "hinge": [
+        {"equipment": "barbell", "name": "Румынская тяга со штангой", "kind": "weight", "sets": 3, "reps": 6, "step": 5.0},
+        {"equipment": "dumbbell", "name": "Румынская тяга с гантелями", "kind": "weight", "sets": 3, "reps": 10, "step": 2.0},
+        {"equipment": "none", "name": "Ягодичный мост", "kind": "bodyweight", "sets": 3, "reps": 20, "step": 0},
+    ],
+    "push_h": [
+        {"equipment": "barbell", "name": "Жим штанги лёжа", "kind": "weight", "sets": 3, "reps": 6, "step": 2.5},
+        {"equipment": "dumbbell", "name": "Жим гантелей лёжа", "kind": "weight", "sets": 3, "reps": 10, "step": 2.0},
+        {"equipment": "none", "name": "Отжимания от пола", "kind": "bodyweight", "sets": 3, "reps": 15, "step": 0},
+    ],
+    "push_v": [
+        {"equipment": "barbell", "name": "Жим штанги стоя", "kind": "weight", "sets": 3, "reps": 8, "step": 2.5},
+        {"equipment": "dumbbell", "name": "Жим гантелей сидя", "kind": "weight", "sets": 3, "reps": 10, "step": 2.0},
+        {"equipment": "none", "name": "Отжимания в упоре ногами выше рук", "kind": "bodyweight", "sets": 3, "reps": 12, "step": 0},
+    ],
+    "pull_h": [
+        {"equipment": "barbell", "name": "Тяга штанги в наклоне", "kind": "weight", "sets": 3, "reps": 8, "step": 2.5},
+        {"equipment": "dumbbell", "name": "Тяга гантели в наклоне", "kind": "weight", "sets": 3, "reps": 10, "step": 2.0},
+        {"equipment": "none", "name": "Тяга полотенца/резинки к поясу", "kind": "bodyweight", "sets": 3, "reps": 20, "step": 0},
+    ],
+    "pull_v": [
+        {"equipment": "barbell", "name": "Тяга верхнего блока", "kind": "weight", "sets": 3, "reps": 10, "step": 2.5},
+        {"equipment": "dumbbell", "name": "Подтягивания в гравитроне/с резинкой", "kind": "bodyweight", "sets": 3, "reps": 8, "step": 0},
+        {"equipment": "none", "name": "Подтягивания на турнике", "kind": "bodyweight", "sets": 3, "reps": 6, "step": 0},
+    ],
+    "legs_acc": [
+        {"equipment": "barbell", "name": "Жим ногами", "kind": "weight", "sets": 3, "reps": 12, "step": 10.0},
+        {"equipment": "dumbbell", "name": "Выпады с гантелями", "kind": "weight", "sets": 3, "reps": 10, "step": 2.0},
+        {"equipment": "none", "name": "Выпады со своим весом", "kind": "bodyweight", "sets": 3, "reps": 20, "step": 0},
+    ],
+    "calf": [
+        {"equipment": "barbell", "name": "Подъём на носки со штангой", "kind": "weight", "sets": 3, "reps": 15, "step": 5.0},
+        {"equipment": "dumbbell", "name": "Подъём на носки с гантелями", "kind": "weight", "sets": 3, "reps": 15, "step": 2.0},
+        {"equipment": "none", "name": "Подъём на носки со своим весом", "kind": "bodyweight", "sets": 3, "reps": 25, "step": 0},
+    ],
+    "arms": [
+        {"equipment": "barbell", "name": "Подъём штанги на бицепс", "kind": "weight", "sets": 3, "reps": 12, "step": 2.5},
+        {"equipment": "dumbbell", "name": "Подъём гантелей на бицепс", "kind": "weight", "sets": 3, "reps": 12, "step": 2.0},
+        {"equipment": "none", "name": "Отжимания узким хватом", "kind": "bodyweight", "sets": 3, "reps": 15, "step": 0},
+    ],
+    "core": [
+        {"equipment": "any", "name": "Планка", "kind": "time", "sets": 3, "reps": 40, "step": 0},
+    ],
+}
+
+# Приоритет выбора оборудования внутри паттерна для каждого уровня доступа
+# пользователя. "any" (например планка) подходит всем и проверяется всегда.
+_TIER_PRIORITY = {
+    "gym": ["barbell", "dumbbell", "none"],
+    "dumbbell": ["dumbbell", "none"],
+    "none": ["none"],
+}
+
+
+def pick_exercise(pattern: str, equipment: str) -> dict:
+    options = {o["equipment"]: o for o in EXERCISE_POOL[pattern]}
+    if "any" in options:
+        return options["any"]
+    for eq in _TIER_PRIORITY.get(equipment, ["none"]):
+        if eq in options:
+            return options[eq]
+    return next(iter(options.values()))
+
+
+# Стартовые рабочие веса для новичков (кг) — консервативно, дальше разгоняет
+# обычная прогрессия. Для bodyweight-вариантов вес не нужен — не указываем.
+BEGINNER_START = {
+    ("squat", "gym"): 20.0, ("squat", "dumbbell"): 8.0,
+    ("hinge", "gym"): 20.0, ("hinge", "dumbbell"): 8.0,
+    ("push_h", "gym"): 20.0, ("push_h", "dumbbell"): 6.0,
+    ("push_v", "gym"): 15.0, ("push_v", "dumbbell"): 4.0,
+    ("pull_h", "gym"): 20.0, ("pull_h", "dumbbell"): 6.0,
+    ("pull_v", "gym"): 25.0,
+    ("legs_acc", "gym"): 40.0, ("legs_acc", "dumbbell"): 6.0,
+    ("calf", "gym"): 20.0, ("calf", "dumbbell"): 6.0,
+    ("arms", "gym"): 10.0, ("arms", "dumbbell"): 4.0,
+}
+
+# Сплит по числу тренировочных дней в неделю (1–6, больше 6 — берём как 6).
+SPLIT_TEMPLATES = {
+    1: [
+        {"code": "A", "title": "Фулбоди", "patterns": ["squat", "hinge", "push_h", "pull_h", "legs_acc", "core"]},
+    ],
+    2: [
+        {"code": "A", "title": "Фулбоди A", "patterns": ["squat", "push_h", "pull_h", "calf", "core"]},
+        {"code": "B", "title": "Фулбоди B", "patterns": ["hinge", "push_v", "pull_v", "legs_acc", "arms"]},
+    ],
+    3: [
+        {"code": "A", "title": "Фулбоди A", "patterns": ["squat", "push_h", "pull_h", "calf", "core"]},
+        {"code": "B", "title": "Фулбоди B", "patterns": ["hinge", "push_v", "pull_v", "legs_acc", "arms"]},
+        {"code": "C", "title": "Фулбоди C", "patterns": ["squat", "push_v", "pull_h", "legs_acc", "core"]},
+    ],
+    4: [
+        {"code": "U1", "title": "Верх A", "patterns": ["push_h", "pull_h", "push_v", "arms", "core"]},
+        {"code": "L1", "title": "Низ A", "patterns": ["squat", "hinge", "legs_acc", "calf"]},
+        {"code": "U2", "title": "Верх B", "patterns": ["push_v", "pull_v", "push_h", "arms", "core"]},
+        {"code": "L2", "title": "Низ B", "patterns": ["hinge", "squat", "legs_acc", "calf"]},
+    ],
+    5: [
+        {"code": "P", "title": "Push (жимовая)", "patterns": ["push_h", "push_v", "arms", "core"]},
+        {"code": "Pl", "title": "Pull (тяговая)", "patterns": ["pull_h", "pull_v", "arms"]},
+        {"code": "L", "title": "Ноги", "patterns": ["squat", "hinge", "legs_acc", "calf"]},
+        {"code": "U", "title": "Верх", "patterns": ["push_h", "pull_h", "push_v", "core"]},
+        {"code": "Lw", "title": "Низ", "patterns": ["hinge", "squat", "legs_acc", "calf"]},
+    ],
+    6: [
+        {"code": "P1", "title": "Push A", "patterns": ["push_h", "push_v", "arms", "core"]},
+        {"code": "Pl1", "title": "Pull A", "patterns": ["pull_h", "pull_v", "arms"]},
+        {"code": "L1", "title": "Ноги A", "patterns": ["squat", "hinge", "legs_acc", "calf"]},
+        {"code": "P2", "title": "Push B", "patterns": ["push_v", "push_h", "arms", "core"]},
+        {"code": "Pl2", "title": "Pull B", "patterns": ["pull_v", "pull_h", "arms"]},
+        {"code": "L2", "title": "Ноги B", "patterns": ["hinge", "squat", "legs_acc", "calf"]},
+    ],
+}
+
+
+def generate_workout_templates(equipment: str, days_count: int) -> list:
+    days_count = max(1, min(int(days_count or 1), 6))
+    template = SPLIT_TEMPLATES[days_count]
+    days = []
+    for d in template:
+        exercises = []
+        for pattern in d["patterns"]:
+            ex = pick_exercise(pattern, equipment)
+            exercises.append(
+                {
+                    "key": pattern,
+                    "name": ex["name"],
+                    "kind": ex["kind"],
+                    "sets": ex["sets"],
+                    "reps": ex["reps"],
+                    "step": ex["step"],
+                }
+            )
+        days.append({"code": d["code"], "title": d["title"], "exercises": exercises})
+    return days
+
+
+# ------------------------------------------------------------------ питание: каталог продуктов
+# (название, белки/100г, жиры/100г, углеводы/100г) — небольшой стартовый набор,
+# пользователь может дополнять своими продуктами прямо в приложении.
+FOOD_CATALOG = [
+    ("Куриная грудка", 23, 1, 0),
+    ("Куриное бедро без кожи", 18, 10, 0),
+    ("Говядина постная", 22, 10, 0),
+    ("Яйцо куриное", 13, 11, 1),
+    ("Творог 5%", 18, 5, 3),
+    ("Творог 9%", 17, 9, 2),
+    ("Греческий йогурт", 9, 5, 4),
+    ("Молоко 2.5%", 3, 2.5, 4.7),
+    ("Рис отварной", 2.5, 0.3, 28),
+    ("Гречка отварная", 4, 1, 20),
+    ("Овсянка (сухая)", 12, 6, 60),
+    ("Макароны отварные", 5, 1, 25),
+    ("Картофель отварной", 2, 0.1, 17),
+    ("Хлеб пшеничный", 8, 3, 50),
+    ("Банан", 1.1, 0.3, 21),
+    ("Яблоко", 0.4, 0.2, 10),
+    ("Авокадо", 2, 15, 9),
+    ("Арахисовая паста", 25, 50, 20),
+    ("Оливковое масло", 0, 100, 0),
+    ("Миндаль", 21, 49, 22),
+    ("Лосось", 20, 13, 0),
+    ("Тунец консервированный", 24, 1, 0),
+    ("Сывороточный протеин (порошок)", 80, 8, 8),
+    ("Сыр твёрдый", 25, 27, 0),
+    ("Фасоль отварная", 8, 0.5, 20),
+    ("Чечевица отварная", 9, 0.4, 20),
+]

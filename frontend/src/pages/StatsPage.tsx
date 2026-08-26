@@ -33,7 +33,8 @@ export default function StatsPage() {
     <div className="stack">
       <div className="card">
         <h2>
-          День {stats.day_number} из 270 · {stats.phase_name}
+          День {stats.day_number}
+          {stats.total_days ? ` из ${stats.total_days}` : ""} · {stats.phase_name}
         </h2>
         <div className="row">
           <span className="label">Последний вес</span>

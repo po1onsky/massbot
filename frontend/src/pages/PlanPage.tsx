@@ -17,7 +17,7 @@ export default function PlanPage() {
     <div className="stack">
       <div className="card">
         <h2>
-          9 месяцев, {plan.start_weight} → {plan.goal_weight} кг
+          {plan.duration_text}, {plan.start_weight} → {plan.goal_weight} кг
         </h2>
       </div>
       {plan.phases.map((p) => (

@@ -1,8 +1,16 @@
 import { getInitData } from "./telegram";
 import type {
+  Equipment,
+  Experience,
+  FoodItem,
+  FoodLogPayload,
   FoodPayload,
+  Goal,
+  GoalResult,
   LogNote,
   MePayload,
+  OnboardingIn,
+  OnboardingResult,
   PlanPayload,
   PlotPayload,
   StatsPayload,
@@ -58,6 +66,35 @@ export const api = {
       method: "POST",
       body: JSON.stringify({ days }),
     }),
+  onboarding: (body: OnboardingIn) =>
+    request<OnboardingResult>("/onboarding", { method: "POST", body: JSON.stringify(body) }),
+  setGoal: (goal: Goal, target_weight: number, target_weeks: number | null) =>
+    request<GoalResult>("/goal", {
+      method: "POST",
+      body: JSON.stringify({ goal, target_weight, target_weeks }),
+    }),
+  setProgram: (
+    equipment: Equipment,
+    experience: Experience,
+    training_days: number[],
+    starting_weights: Record<string, number>
+  ) =>
+    request<MePayload>("/program", {
+      method: "POST",
+      body: JSON.stringify({ equipment, experience, training_days, starting_weights }),
+    }),
+  foodSearch: (q: string) => request<FoodItem[]>(`/food/search?q=${encodeURIComponent(q)}`),
+  foodLogToday: () => request<FoodLogPayload>("/food/log/today"),
+  foodLogItem: (food_id: number, grams: number) =>
+    request<FoodLogPayload>("/food/log/item", { method: "POST", body: JSON.stringify({ food_id, grams }) }),
+  foodLogManual: (label: string, kcal: number, protein: number, fat: number, carbs: number) =>
+    request<FoodLogPayload>("/food/log/manual", {
+      method: "POST",
+      body: JSON.stringify({ label, kcal, protein, fat, carbs }),
+    }),
+  foodLogDelete: (id: number) => request<FoodLogPayload>(`/food/log/${id}`, { method: "DELETE" }),
+  foodCustom: (name: string, protein: number, fat: number, carbs: number) =>
+    request<{ id: number }>("/food/custom", { method: "POST", body: JSON.stringify({ name, protein, fat, carbs }) }),
 };
 
 export { ApiError };
