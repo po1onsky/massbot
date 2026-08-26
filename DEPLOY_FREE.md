@@ -136,11 +136,14 @@ INFO:     Application startup complete.
 
 ```bash
 ssh -i ~/Downloads/ssh-key-*.key ubuntu@<PUBLIC_IP>
-sudo -u massbot bash /opt/massbot/deploy/update.sh
+bash /opt/massbot/deploy/update.sh
 ```
 
-Скрипт сам сделает `git pull`, обновит зависимости, пересоберёт фронтенд
-и перезапустит сервис (см. [deploy/update.sh](deploy/update.sh)).
+Запускать от своего пользователя, не через `sudo -u massbot` — скрипт сам
+переключается на massbot там, где это нужно (владение файлами), и
+перезапускает сервис от твоего sudo. Сам сделает `git pull`, обновит
+зависимости, пересоберёт фронтенд и перезапустит сервис (см.
+[deploy/update.sh](deploy/update.sh)).
 
 ## Ограничения этого варианта
 

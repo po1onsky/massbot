@@ -126,9 +126,10 @@ INFO:     Application startup complete.
 
 ## 8. Обновления после `git push`
 
-Заходишь по SSH (та же кнопка в консоли) и:
+Заходишь по SSH (та же кнопка в консоли) и от своего пользователя (не через
+`sudo -u massbot` — скрипт сам переключается на massbot, где нужно):
 ```bash
-sudo -u massbot bash /opt/massbot/deploy/update.sh
+bash /opt/massbot/deploy/update.sh
 ```
 
 ## Что именно бесплатно навсегда (Always Free)
