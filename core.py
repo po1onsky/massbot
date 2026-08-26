@@ -18,9 +18,12 @@ from program import (
     SHAKE,
     FOOD_CATALOG,
     BEGINNER_START,
+    BLOCK_WEEKS,
     phase_for_day,
     planned_weight,
     generate_workout_templates,
+    block_style_for,
+    apply_block_style,
 )
 
 TZ = ZoneInfo(os.environ.get("TZ_NAME", "Europe/Moscow"))
@@ -181,19 +184,53 @@ def current_phase_idx(u) -> int:
 
 
 def get_program_days(u) -> list:
+    """Базовый (без учёта блока) сплит — конкретные упражнения под паттерн/
+    оборудование, сеты/повторы ещё не подогнаны под текущий блок."""
     if is_new_style(u):
         return json.loads(u["program_json"])
     _, phase = current_phase(u)
     return phase["days"]
 
 
+def current_block_index(u) -> int:
+    """0-based индекс блока периодизации (8 недель на блок, зациклено)."""
+    week = day_number(u) // 7
+    return week // BLOCK_WEEKS
+
+
+def total_blocks(u) -> Optional[int]:
+    """Сколько блоков во всей программе. None — открытый срок (без цели по неделям)."""
+    if not u["target_weeks"]:
+        return None
+    return max(1, -(-u["target_weeks"] // BLOCK_WEEKS))  # ceil division
+
+
+def get_program_days_for_block(u, block_index: int) -> list:
+    """Сплит с сетами/повторами, подогнанными под стиль конкретного блока —
+    сами упражнения (и рабочий вес, ключуемый по паттерну) не меняются между
+    блоками, продолжая копить прогресс."""
+    base_days = get_program_days(u)
+    if not is_new_style(u):
+        return base_days
+    style = block_style_for(block_index)
+    return [
+        {
+            "code": d["code"],
+            "title": d["title"],
+            "exercises": [apply_block_style(e, style) for e in d["exercises"]],
+        }
+        for d in base_days
+    ]
+
+
 def phase_display(u) -> str:
     if is_new_style(u):
         week = day_number(u) // 7 + 1
         total_weeks = u["target_weeks"]
+        style = block_style_for(current_block_index(u))
         if total_weeks:
-            return f"Неделя {week} из {total_weeks}"
-        return f"Неделя {week}"
+            return f"{style['name']} · неделя {week} из {total_weeks}"
+        return f"{style['name']} · неделя {week}"
     _, phase = current_phase(u)
     return phase["name"]
 
@@ -222,13 +259,15 @@ def is_deload(u) -> bool:
 
 
 def next_day_plan(u):
-    """Какая тренировка по счёту в программе (по факту записанных тренировок)."""
+    """Какая тренировка по счёту в программе (по факту записанных тренировок).
+    Ротация A/B/C идёт по общему числу тренировок и не сбрасывается на
+    границе блока — блок просто подгоняет подходы/повторы того же дня."""
     idx = current_phase_idx(u)
     n = db.execute(
         "SELECT COUNT(*) c FROM sessions WHERE chat_id=? AND phase=?",
         (u["chat_id"], idx),
     ).fetchone()["c"]
-    days = get_program_days(u)
+    days = get_program_days_for_block(u, current_block_index(u)) if is_new_style(u) else get_program_days(u)
     return days[n % len(days)]
 
 
@@ -582,24 +621,37 @@ def plan_payload(u) -> dict:
     if is_new_style(u):
         months_text = f"{u['target_weeks']} нед." if u["target_weeks"] else "без ограничения по срокам"
         kcal = (u["kcal_base"] or 0) + u["kcal_offset"]
-        return {
-            "start_weight": u["start_weight"],
-            "goal_weight": u["goal_weight"],
-            "duration_text": months_text,
-            "phases": [
+        n_blocks = total_blocks(u)
+        cur_block = current_block_index(u)
+        # Открытый срок (или очень длинная программа) — не рисуем блоки без
+        # конца: показываем один цикл стилей (3 блока), но не меньше, чем
+        # нужно, чтобы включить текущий блок; жёсткий потолок на 12 карточек.
+        shown = max(n_blocks or 3, cur_block + 1)
+        shown = min(shown, 12)
+        phases = []
+        for b in range(shown):
+            style = block_style_for(b)
+            week_from = b * BLOCK_WEEKS + 1
+            week_to = (b + 1) * BLOCK_WEEKS if not u["target_weeks"] else min((b + 1) * BLOCK_WEEKS, u["target_weeks"])
+            phases.append(
                 {
-                    "index": 0,
-                    "current": True,
-                    "name": "Твоя программа",
-                    "months": months_text,  # уже самодостаточная строка ("24 нед." и т.п.) — без префикса "мес."
+                    "index": b,
+                    "current": b == cur_block,
+                    "name": style["name"],
+                    "months": f"нед. {week_from}–{week_to}",
                     "kcal": kcal,
                     "protein": u["protein_g"],
                     "fat": u["fat_g"],
                     "carbs": u["carbs_g"],
-                    "note": "Разгрузка каждую 4-ю неделю: веса 60%, подходов вдвое меньше.",
-                    "days": get_program_days(u),
+                    "note": f"{style['note']} Разгрузка каждую 4-ю неделю: веса 60%, подходов вдвое меньше.",
+                    "days": get_program_days_for_block(u, b),
                 }
-            ],
+            )
+        return {
+            "start_weight": u["start_weight"],
+            "goal_weight": u["goal_weight"],
+            "duration_text": months_text,
+            "phases": phases,
         }
     idx, _ = current_phase(u)
     phases = []
