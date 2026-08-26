@@ -9,18 +9,22 @@ APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PORT="${PORT:-8000}"
 TUNNEL_LOG="$(mktemp)"
 
-cloudflared tunnel --url "http://127.0.0.1:${PORT}" --no-autoupdate >"$TUNNEL_LOG" 2>&1 &
+cloudflared tunnel --url "http://127.0.0.1:${PORT}" --no-autoupdate \
+  --protocol http2 --edge-ip-version 4 >"$TUNNEL_LOG" 2>&1 &
+# --protocol http2 --edge-ip-version 4: на некоторых облачных VPC (замечено на
+# GCP) дефолтный QUIC/IPv6 путь у cloudflared зависает без ошибки на этапе
+# установки соединения — форсируем HTTP/2 поверх IPv4, с ним подключается.
 
 echo "Ждём адрес от Cloudflare Tunnel..."
 PUBLIC_URL=""
-for _ in $(seq 1 30); do
+for _ in $(seq 1 45); do
   PUBLIC_URL=$(grep -oE 'https://[a-zA-Z0-9-]+\.trycloudflare\.com' "$TUNNEL_LOG" | head -n1 || true)
   [ -n "$PUBLIC_URL" ] && break
   sleep 1
 done
 
 if [ -z "$PUBLIC_URL" ]; then
-  echo "Не получили адрес туннеля за 30 секунд. Лог cloudflared:" >&2
+  echo "Не получили адрес туннеля за 45 секунд. Лог cloudflared:" >&2
   cat "$TUNNEL_LOG" >&2
   rm -f "$TUNNEL_LOG"
   exit 1
