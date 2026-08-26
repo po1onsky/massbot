@@ -27,7 +27,7 @@ export default function PlanPage() {
             {p.current && <span className="badge" style={{ marginLeft: 8 }}>ты здесь</span>}
           </h2>
           <div className="hint" style={{ marginBottom: 8 }}>
-            мес. {p.months} · {p.kcal} ккал · Б {p.protein} · Ж {p.fat} · У {p.carbs}
+            {p.months} · {p.kcal} ккал · Б {p.protein} · Ж {p.fat} · У {p.carbs}
           </div>
           <p className="hint" style={{ marginBottom: 10 }}>{p.note}</p>
           {p.days.map((d) => (

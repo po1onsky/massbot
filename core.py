@@ -591,7 +591,7 @@ def plan_payload(u) -> dict:
                     "index": 0,
                     "current": True,
                     "name": "Твоя программа",
-                    "months": months_text,
+                    "months": months_text,  # уже самодостаточная строка ("24 нед." и т.п.) — без префикса "мес."
                     "kcal": kcal,
                     "protein": u["protein_g"],
                     "fat": u["fat_g"],
@@ -609,7 +609,7 @@ def plan_payload(u) -> dict:
                 "index": i,
                 "current": i == idx,
                 "name": p["name"],
-                "months": p["months"],
+                "months": f"мес. {p['months']}",  # легаси-диапазон ("1–3") — префикс тут, а не во фронтенде
                 "kcal": p["kcal"],
                 "protein": p["protein"],
                 "fat": p["fat"],
