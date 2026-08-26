@@ -32,6 +32,17 @@ fi
 rm -f "$TUNNEL_LOG"
 
 echo "Публичный адрес: $PUBLIC_URL"
+
+# Cloudflare печатает адрес чуть раньше, чем маршрут реально начинает
+# резолвиться — без этой паузы Telegram иногда не может поставить вебхук
+# (BadRequest: failed to resolve host) сразу после старта.
+HOST="${PUBLIC_URL#https://}"
+echo "Ждём, пока адрес начнёт резолвиться..."
+for _ in $(seq 1 20); do
+  getent hosts "$HOST" >/dev/null 2>&1 && break
+  sleep 1
+done
+
 export PUBLIC_URL
 
 cd "$APP_DIR"
