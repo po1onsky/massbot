@@ -2,6 +2,11 @@
 Description=Massbot mini app (FastAPI + Telegram bot + Cloudflare Tunnel)
 After=network-online.target
 Wants=network-online.target
+# Не долбить cloudflared/Telegram бесконечно при падении: максимум 3 попытки
+# за 5 минут, дальше systemd остановится и будет ждать ручного вмешательства
+# (иначе легко словить 429 Too Many Requests от trycloudflare.com).
+StartLimitIntervalSec=300
+StartLimitBurst=3
 
 [Service]
 Type=simple
@@ -11,7 +16,7 @@ WorkingDirectory=/opt/massbot
 EnvironmentFile=/etc/massbot.env
 ExecStart=/opt/massbot/deploy/start.sh
 Restart=always
-RestartSec=5
+RestartSec=20
 # systemd по умолчанию убивает всю control-group сервиса (bash + cloudflared +
 # uvicorn) при stop/restart — отдельно останавливать туннель не нужно.
 
