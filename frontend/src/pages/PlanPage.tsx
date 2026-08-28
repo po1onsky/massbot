@@ -1,7 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import Loading from "../components/Loading";
-import { exerciseIcon } from "../exerciseIcons";
 import type { PlanPayload } from "../types";
 
 export default function PlanPage() {
@@ -35,14 +34,7 @@ export default function PlanPage() {
           {p.days.map((d) => (
             <div key={d.code} style={{ marginBottom: 8 }}>
               <div style={{ fontWeight: 600, fontSize: 14 }}>{d.title}</div>
-              <div className="hint">
-                {d.exercises.map((e) => (
-                  <span key={e.key} style={{ marginRight: 10, whiteSpace: "nowrap" }}>
-                    <span className="ex-icon">{exerciseIcon(e.key)}</span>
-                    {e.name}
-                  </span>
-                ))}
-              </div>
+              <div className="hint">{d.exercises.map((e) => e.name).join(", ")}</div>
             </div>
           ))}
         </div>
