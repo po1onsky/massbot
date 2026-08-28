@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
-import { hapticNotify } from "../telegram";
+import { haptic, hapticNotify } from "../telegram";
 import Loading from "../components/Loading";
 import type { FoodItem, FoodLogPayload, FoodPayload, SuppPayload } from "../types";
 
@@ -86,6 +86,26 @@ export default function FoodPage() {
     try {
       const res = await api.setPrefs({ wants_supplements: !supp.wants_supplements });
       setSupp(res.supp);
+    } catch (e) {
+      setError((e as ApiError).message);
+    }
+  }
+
+  async function toggleProteinPowder() {
+    if (!food) return;
+    try {
+      const res = await api.setPrefs({ has_protein_powder: !food.has_protein_powder });
+      setFood(res.food);
+    } catch (e) {
+      setError((e as ApiError).message);
+    }
+  }
+
+  async function toggleSuppItem(key: string, taken: boolean) {
+    try {
+      const s = await api.setSuppItem(key, taken);
+      setSupp(s);
+      haptic("light");
     } catch (e) {
       setError((e as ApiError).message);
     }
@@ -296,7 +316,23 @@ export default function FoodPage() {
           </button>
         </div>
         {food.wants_shake ? (
-          food.shake && <p className="hint" style={{ whiteSpace: "pre-line" }}>{food.shake}</p>
+          <>
+            <div className="btn-row" style={{ marginBottom: 8 }}>
+              <button
+                className={`choice-toggle ${food.has_protein_powder ? "selected" : ""}`}
+                onClick={() => !food.has_protein_powder && toggleProteinPowder()}
+              >
+                Есть протеин
+              </button>
+              <button
+                className={`choice-toggle ${!food.has_protein_powder ? "selected" : ""}`}
+                onClick={() => food.has_protein_powder && toggleProteinPowder()}
+              >
+                Без протеина
+              </button>
+            </div>
+            {food.shake && <p className="hint" style={{ whiteSpace: "pre-line" }}>{food.shake}</p>}
+          </>
         ) : (
           <p className="hint">Рекомендация по шейку скрыта — не хочешь пить шейк, не проблема.</p>
         )}
@@ -315,23 +351,39 @@ export default function FoodPage() {
         </div>
         {supp.wants_supplements ? (
           <>
-            {supp.supplements.map((s) => (
-              <div className="hint" key={s} style={{ marginBottom: 4 }}>
-                • {s}
-              </div>
-            ))}
-            <div className="row" style={{ marginTop: 8 }}>
-              <span className="label">Серия без пропусков</span>
-              <span className="value">{supp.streak} дн.</span>
+            <p className="hint" style={{ marginBottom: 8 }}>Отметь, что из этого реально принимаешь:</p>
+            <div className="stack" style={{ gap: 4 }}>
+              {supp.supplements.map((s) => (
+                <div
+                  key={s.key}
+                  className="row"
+                  style={{ alignItems: "flex-start", cursor: "pointer" }}
+                  onClick={() => toggleSuppItem(s.key, !s.taken)}
+                >
+                  <div>
+                    <div style={{ fontWeight: 600 }}>{s.name}</div>
+                    <div className="hint">{s.note}</div>
+                  </div>
+                  <span style={{ fontSize: 18, flex: "none", marginLeft: 8 }}>{s.taken ? "✅" : "⬜️"}</span>
+                </div>
+              ))}
             </div>
-            <button
-              className="btn"
-              style={{ marginTop: 10 }}
-              disabled={supp.marked_today}
-              onClick={markSupp}
-            >
-              {supp.marked_today ? "Сегодня отмечено ✅" : "Отметить креатин на сегодня"}
-            </button>
+            {supp.creatine_taken && (
+              <>
+                <div className="row" style={{ marginTop: 8 }}>
+                  <span className="label">Серия без пропусков</span>
+                  <span className="value">{supp.streak} дн.</span>
+                </div>
+                <button
+                  className="btn"
+                  style={{ marginTop: 10 }}
+                  disabled={supp.marked_today}
+                  onClick={markSupp}
+                >
+                  {supp.marked_today ? "Сегодня отмечено ✅" : "Отметить креатин на сегодня"}
+                </button>
+              </>
+            )}
             <p className="hint" style={{ marginTop: 8 }}>
               Не тратить деньги: BCAA, глютамин, тестобустеры, ZMA. Сон 7–9 часов влияет на набор сильнее всего списка выше.
             </p>

@@ -8,13 +8,16 @@
 import json
 import os
 import sqlite3
+import threading
 import datetime as dt
 from typing import Optional
 from zoneinfo import ZoneInfo
 
 from program import (
     PHASES,
-    SUPPLEMENTS,
+    SUPPLEMENT_CATALOG,
+    ALL_SUPPLEMENT_KEYS,
+    SHAKE_NO_PROTEIN,
     SHAKE,
     SHAKE_LOSE,
     FOOD_CATALOG,
@@ -33,9 +36,50 @@ TZ = ZoneInfo(os.environ.get("TZ_NAME", "Europe/Moscow"))
 DB_PATH = os.environ.get("DB_PATH", "massbot.db")
 DEFAULT_TRAINING_DAYS = "0,2,4"  # пн, ср, пт
 
-db = sqlite3.connect(DB_PATH, check_same_thread=False)
-db.row_factory = sqlite3.Row
-db.execute("PRAGMA journal_mode=WAL")  # бот и API — разные процессы, пишут в одну базу
+class _ThreadLocalConnection:
+    """Одно соединение sqlite3 на поток вместо одного на весь процесс.
+
+    FastAPI выполняет обычные (не async) хендлеры в пуле потоков — при
+    нескольких параллельных запросах (например Promise.all на фронтенде)
+    несколько потоков реально одновременно дёргали один и тот же объект
+    Connection. check_same_thread=False снимает питоновскую проверку "тот же
+    поток?", но не делает сам объект безопасным для одновременного вызова —
+    ловили то UNIQUE constraint (два потока оба не находили строку и оба
+    вставляли), то sqlite3.InterfaceError: bad parameter or other API misuse
+    (буквальное состояние гонки внутри драйвера).
+
+    Правильное решение — то, для чего и заводили WAL: у каждого потока своё
+    соединение к тому же файлу, WAL спокойно даёт параллельно читать и писать
+    из разных соединений."""
+
+    def __init__(self, path: str):
+        self._path = path
+        self._local = threading.local()
+
+    def _conn(self) -> sqlite3.Connection:
+        conn = getattr(self._local, "conn", None)
+        if conn is None:
+            conn = sqlite3.connect(self._path, check_same_thread=False)
+            conn.row_factory = sqlite3.Row
+            conn.execute("PRAGMA journal_mode=WAL")
+            conn.execute("PRAGMA busy_timeout=5000")
+            self._local.conn = conn
+        return conn
+
+    def execute(self, *args, **kwargs):
+        return self._conn().execute(*args, **kwargs)
+
+    def executemany(self, *args, **kwargs):
+        return self._conn().executemany(*args, **kwargs)
+
+    def executescript(self, *args, **kwargs):
+        return self._conn().executescript(*args, **kwargs)
+
+    def commit(self):
+        return self._conn().commit()
+
+
+db = _ThreadLocalConnection(DB_PATH)
 
 
 def init_db() -> None:
@@ -118,6 +162,8 @@ def init_db() -> None:
         # оба блока остаются включены как раньше, ничего не меняется молча.
         ("wants_shake", "INTEGER NOT NULL DEFAULT 1"),
         ("wants_supplements", "INTEGER NOT NULL DEFAULT 1"),
+        ("has_protein_powder", "INTEGER NOT NULL DEFAULT 1"),
+        ("supplements_taken", f"TEXT NOT NULL DEFAULT '{ALL_SUPPLEMENT_KEYS}'"),
     ]
     for name, decl in migrations:
         if name not in cols:
@@ -150,19 +196,25 @@ def get_user(chat_id: int):
 
 
 def ensure_user(chat_id: int, first_name: Optional[str] = None):
+    # INSERT OR IGNORE вместо "SELECT, потом INSERT если пусто" — та версия
+    # была race condition-ом: мини-апп на одной загрузке страницы шлёт
+    # несколько запросов параллельно (например Promise.all на "Питании"),
+    # каждый independently вызывает ensure_user; два потока могли оба
+    # увидеть "пользователя нет" и оба попытаться вставить строку — второй
+    # падал с UNIQUE constraint failed. OR IGNORE делает вставку безопасной
+    # при параллельных вызовах вне зависимости от того, кто окажется первым.
+    #
+    # Новый пользователь: onboarded=0 — программу и цель он ещё не задал,
+    # фронтенд покажет визард настройки вместо дашборда. start/goal_weight
+    # тут просто заглушки, онбординг их сразу перезапишет.
+    db.execute(
+        "INSERT OR IGNORE INTO users (chat_id, start_date, start_weight, goal_weight, training_days, first_name, onboarded)"
+        " VALUES (?,?,?,?,?,?,0)",
+        (chat_id, today_str(), 0.0, 0.0, DEFAULT_TRAINING_DAYS, first_name),
+    )
+    db.commit()
     u = get_user(chat_id)
-    if u is None:
-        # Новый пользователь: onboarded=0 — программу и цель он ещё не задал,
-        # фронтенд покажет визард настройки вместо дашборда. start/goal_weight
-        # тут просто заглушки, онбординг их сразу перезапишет.
-        db.execute(
-            "INSERT INTO users (chat_id, start_date, start_weight, goal_weight, training_days, first_name, onboarded)"
-            " VALUES (?,?,?,?,?,?,0)",
-            (chat_id, today_str(), 0.0, 0.0, DEFAULT_TRAINING_DAYS, first_name),
-        )
-        db.commit()
-        u = get_user(chat_id)
-    elif first_name and u["first_name"] != first_name:
+    if first_name and u["first_name"] != first_name:
         db.execute("UPDATE users SET first_name=? WHERE chat_id=?", (first_name, chat_id))
         db.commit()
         u = get_user(chat_id)
@@ -596,11 +648,14 @@ def _shake_for(u) -> Optional[str]:
     """Текст рекомендации шейка — или None, если пользователь её выключил.
     На сброс веса калорийный шейк (~800 ккал) противоречит цели — подставляем
     лёгкий вариант вместо него. Легаси-программа всегда про набор — ей и
-    прежний рецепт годится."""
+    прежний рецепт годится. Нет протеинового порошка — тот же по духу шейк,
+    но без него (компенсировано молоком/пастой)."""
     if not u["wants_shake"]:
         return None
     if is_new_style(u) and u["goal"] == "lose":
         return SHAKE_LOSE
+    if not u["has_protein_powder"]:
+        return SHAKE_NO_PROTEIN
     return SHAKE
 
 
@@ -616,6 +671,7 @@ def food_payload(u) -> dict:
             "carbs": u["carbs_g"],
             "shake": _shake_for(u),
             "wants_shake": bool(u["wants_shake"]),
+            "has_protein_powder": bool(u["has_protein_powder"]),
         }
     _, phase = current_phase(u)
     kcal = phase["kcal"] + u["kcal_offset"]
@@ -628,6 +684,7 @@ def food_payload(u) -> dict:
         "carbs": phase["carbs"],
         "shake": _shake_for(u),
         "wants_shake": bool(u["wants_shake"]),
+        "has_protein_powder": bool(u["has_protein_powder"]),
     }
 
 
@@ -638,7 +695,12 @@ def set_kcal_offset(u, delta: int) -> int:
     return new
 
 
-def set_prefs(u, wants_shake: Optional[bool] = None, wants_supplements: Optional[bool] = None) -> dict:
+def set_prefs(
+    u,
+    wants_shake: Optional[bool] = None,
+    wants_supplements: Optional[bool] = None,
+    has_protein_powder: Optional[bool] = None,
+) -> dict:
     """Личные предпочтения по блокам «Питания» — включаются/выключаются прямо
     на странице, не только на онбординге. Хранятся на пользователе, поэтому
     сохраняются между сессиями."""
@@ -646,9 +708,16 @@ def set_prefs(u, wants_shake: Optional[bool] = None, wants_supplements: Optional
         db.execute("UPDATE users SET wants_shake=? WHERE chat_id=?", (int(wants_shake), u["chat_id"]))
     if wants_supplements is not None:
         db.execute("UPDATE users SET wants_supplements=? WHERE chat_id=?", (int(wants_supplements), u["chat_id"]))
+    if has_protein_powder is not None:
+        db.execute("UPDATE users SET has_protein_powder=? WHERE chat_id=?", (int(has_protein_powder), u["chat_id"]))
     db.commit()
     u2 = get_user(u["chat_id"])
     return {"food": food_payload(u2), "supp": supp_payload(u2)}
+
+
+def _taken_supplement_keys(u) -> set:
+    raw = u["supplements_taken"] or ""
+    return {k for k in raw.split(",") if k}
 
 
 def supp_payload(u) -> dict:
@@ -668,12 +737,34 @@ def supp_payload(u) -> dict:
         streak += 1
         d -= dt.timedelta(days=1)
     wants_supplements = bool(u["wants_supplements"])
+    taken = _taken_supplement_keys(u)
+    items = [
+        {"key": s["key"], "name": s["name"], "note": s["note"], "taken": s["key"] in taken}
+        for s in SUPPLEMENT_CATALOG
+    ]
     return {
-        "supplements": SUPPLEMENTS if wants_supplements else [],
+        "supplements": items if wants_supplements else [],
         "marked_today": marked_today,
         "streak": streak,
         "wants_supplements": wants_supplements,
+        # отдельно: отметка выполнения по дням имеет смысл только пока
+        # креатин реально в списке того, что человек принимает
+        "creatine_taken": "creatine" in taken,
     }
+
+
+def set_supplement_taken(u, key: str, taken: bool) -> dict:
+    valid_keys = {s["key"] for s in SUPPLEMENT_CATALOG}
+    if key not in valid_keys:
+        raise ValueError("неизвестная добавка")
+    cur = _taken_supplement_keys(u)
+    if taken:
+        cur.add(key)
+    else:
+        cur.discard(key)
+    db.execute("UPDATE users SET supplements_taken=? WHERE chat_id=?", (",".join(sorted(cur)), u["chat_id"]))
+    db.commit()
+    return supp_payload(get_user(u["chat_id"]))
 
 
 def supp_mark(u) -> dict:

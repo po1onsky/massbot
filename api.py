@@ -167,12 +167,27 @@ def post_supp_mark(auth: AuthUser = Depends(get_current_user)):
 class PrefsIn(BaseModel):
     wants_shake: Optional[bool] = None
     wants_supplements: Optional[bool] = None
+    has_protein_powder: Optional[bool] = None
 
 
 @api.post("/prefs")
 def post_prefs(body: PrefsIn, auth: AuthUser = Depends(get_current_user)):
     u = _user(auth)
-    return core.set_prefs(u, body.wants_shake, body.wants_supplements)
+    return core.set_prefs(u, body.wants_shake, body.wants_supplements, body.has_protein_powder)
+
+
+class SuppItemIn(BaseModel):
+    key: str
+    taken: bool
+
+
+@api.post("/supp/item")
+def post_supp_item(body: SuppItemIn, auth: AuthUser = Depends(get_current_user)):
+    u = _user(auth)
+    try:
+        return core.set_supplement_taken(u, body.key, body.taken)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 @api.get("/plan")

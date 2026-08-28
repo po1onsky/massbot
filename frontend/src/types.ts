@@ -161,12 +161,21 @@ export interface FoodPayload {
   carbs: number;
   shake: string | null;
   wants_shake: boolean;
+  has_protein_powder: boolean;
+}
+
+export interface SupplementItem {
+  key: string;
+  name: string;
+  note: string;
+  taken: boolean;
 }
 
 export interface SuppPayload {
-  supplements: string[];
+  supplements: SupplementItem[];
   marked_today: boolean;
   streak: number;
+  creatine_taken: boolean;
   wants_supplements: boolean;
 }
 
