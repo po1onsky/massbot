@@ -368,7 +368,7 @@ export default function FoodPage() {
                 </div>
               ))}
             </div>
-            {supp.creatine_taken && (
+            {supp.any_taken && (
               <>
                 <div className="row" style={{ marginTop: 8 }}>
                   <span className="label">Серия без пропусков</span>
@@ -380,7 +380,7 @@ export default function FoodPage() {
                   disabled={supp.marked_today}
                   onClick={markSupp}
                 >
-                  {supp.marked_today ? "Сегодня отмечено ✅" : "Отметить креатин на сегодня"}
+                  {supp.marked_today ? "Сегодня отмечено ✅" : "Отметить приём добавок на сегодня"}
                 </button>
               </>
             )}

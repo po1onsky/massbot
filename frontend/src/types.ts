@@ -175,7 +175,7 @@ export interface SuppPayload {
   supplements: SupplementItem[];
   marked_today: boolean;
   streak: number;
-  creatine_taken: boolean;
+  any_taken: boolean;
   wants_supplements: boolean;
 }
 
