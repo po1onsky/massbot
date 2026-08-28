@@ -94,15 +94,34 @@ export const api = {
     }),
   splits: (days: number) => request<SplitOption[]>(`/splits?days=${days}`),
   foodSearch: (q: string) => request<FoodItem[]>(`/food/search?q=${encodeURIComponent(q)}`),
-  foodLogToday: () => request<FoodLogPayload>("/food/log/today"),
-  foodLogItem: (food_id: number, grams: number) =>
-    request<FoodLogPayload>("/food/log/item", { method: "POST", body: JSON.stringify({ food_id, grams }) }),
-  foodLogManual: (label: string, kcal: number, protein: number, fat: number, carbs: number) =>
+  foodLog: (date?: string) => request<FoodLogPayload>(`/food/log${date ? `?date=${date}` : ""}`),
+  foodLogItem: (food_id: number, grams: number, date?: string) =>
+    request<FoodLogPayload>("/food/log/item", { method: "POST", body: JSON.stringify({ food_id, grams, date }) }),
+  foodLogManual: (label: string, kcal: number, protein: number, fat: number, carbs: number, date?: string) =>
     request<FoodLogPayload>("/food/log/manual", {
       method: "POST",
-      body: JSON.stringify({ label, kcal, protein, fat, carbs }),
+      body: JSON.stringify({ label, kcal, protein, fat, carbs, date }),
     }),
-  foodLogDelete: (id: number) => request<FoodLogPayload>(`/food/log/${id}`, { method: "DELETE" }),
+  foodLogEditItem: (id: number, grams: number, date?: string) =>
+    request<FoodLogPayload>(`/food/log/${id}/item`, {
+      method: "PUT",
+      body: JSON.stringify({ grams, date }),
+    }),
+  foodLogEditManual: (
+    id: number,
+    label: string,
+    kcal: number,
+    protein: number,
+    fat: number,
+    carbs: number,
+    date?: string
+  ) =>
+    request<FoodLogPayload>(`/food/log/${id}/manual`, {
+      method: "PUT",
+      body: JSON.stringify({ label, kcal, protein, fat, carbs, date }),
+    }),
+  foodLogDelete: (id: number, date?: string) =>
+    request<FoodLogPayload>(`/food/log/${id}${date ? `?date=${date}` : ""}`, { method: "DELETE" }),
   foodCustom: (name: string, protein: number, fat: number, carbs: number) =>
     request<{ id: number }>("/food/custom", { method: "POST", body: JSON.stringify({ name, protein, fat, carbs }) }),
 };

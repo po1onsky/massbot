@@ -269,22 +269,23 @@ def get_food_search(q: str = "", auth: AuthUser = Depends(get_current_user)):
     return core.food_search(q, u["chat_id"])
 
 
-@api.get("/food/log/today")
-def get_food_log_today(auth: AuthUser = Depends(get_current_user)):
+@api.get("/food/log")
+def get_food_log(date: Optional[str] = None, auth: AuthUser = Depends(get_current_user)):
     u = _user(auth)
-    return core.food_log_today(u["chat_id"])
+    return core.food_log_for_date(u["chat_id"], date)
 
 
 class FoodLogItemIn(BaseModel):
     food_id: int
     grams: float
+    date: Optional[str] = None
 
 
 @api.post("/food/log/item")
 def post_food_log_item(body: FoodLogItemIn, auth: AuthUser = Depends(get_current_user)):
     u = _user(auth)
-    core.log_food_by_item(u["chat_id"], body.food_id, body.grams)
-    return core.food_log_today(u["chat_id"])
+    core.log_food_by_item(u["chat_id"], body.food_id, body.grams, body.date)
+    return core.food_log_for_date(u["chat_id"], body.date)
 
 
 class FoodLogManualIn(BaseModel):
@@ -293,20 +294,55 @@ class FoodLogManualIn(BaseModel):
     protein: float = 0
     fat: float = 0
     carbs: float = 0
+    date: Optional[str] = None
 
 
 @api.post("/food/log/manual")
 def post_food_log_manual(body: FoodLogManualIn, auth: AuthUser = Depends(get_current_user)):
     u = _user(auth)
-    core.log_food_manual(u["chat_id"], body.label, body.kcal, body.protein, body.fat, body.carbs)
-    return core.food_log_today(u["chat_id"])
+    core.log_food_manual(u["chat_id"], body.label, body.kcal, body.protein, body.fat, body.carbs, body.date)
+    return core.food_log_for_date(u["chat_id"], body.date)
+
+
+class FoodLogEditItemIn(BaseModel):
+    grams: float
+    date: Optional[str] = None
+
+
+@api.put("/food/log/{entry_id}/item")
+def put_food_log_item(entry_id: int, body: FoodLogEditItemIn, auth: AuthUser = Depends(get_current_user)):
+    u = _user(auth)
+    try:
+        core.update_food_log_item(u["chat_id"], entry_id, body.grams)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return core.food_log_for_date(u["chat_id"], body.date)
+
+
+class FoodLogEditManualIn(BaseModel):
+    label: str = ""
+    kcal: float
+    protein: float = 0
+    fat: float = 0
+    carbs: float = 0
+    date: Optional[str] = None
+
+
+@api.put("/food/log/{entry_id}/manual")
+def put_food_log_manual(entry_id: int, body: FoodLogEditManualIn, auth: AuthUser = Depends(get_current_user)):
+    u = _user(auth)
+    try:
+        core.update_food_log_manual(u["chat_id"], entry_id, body.label, body.kcal, body.protein, body.fat, body.carbs)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
+    return core.food_log_for_date(u["chat_id"], body.date)
 
 
 @api.delete("/food/log/{entry_id}")
-def delete_food_log_entry(entry_id: int, auth: AuthUser = Depends(get_current_user)):
+def delete_food_log_entry(entry_id: int, date: Optional[str] = None, auth: AuthUser = Depends(get_current_user)):
     u = _user(auth)
     core.delete_food_log(u["chat_id"], entry_id)
-    return core.food_log_today(u["chat_id"])
+    return core.food_log_for_date(u["chat_id"], date)
 
 
 class CustomFoodIn(BaseModel):

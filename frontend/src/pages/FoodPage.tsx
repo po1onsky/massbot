@@ -2,7 +2,23 @@ import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { haptic, hapticNotify } from "../telegram";
 import Loading from "../components/Loading";
-import type { FoodItem, FoodLogPayload, FoodPayload, SuppPayload } from "../types";
+import type { FoodItem, FoodLogEntry, FoodLogPayload, FoodPayload, SuppPayload } from "../types";
+
+// Чистая календарная арифметика через Date.UTC — без реального часового
+// пояса, просто чтобы не спотыкаться о локальные сдвиги при +-1 дне.
+function addDays(dateStr: string, delta: number): string {
+  const [y, m, d] = dateStr.split("-").map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  dt.setUTCDate(dt.getUTCDate() + delta);
+  return dt.toISOString().slice(0, 10);
+}
+
+function formatDayLabel(date: string, today: string): string {
+  if (date === today) return "Сегодня";
+  if (date === addDays(today, -1)) return "Вчера";
+  const [, m, d] = date.split("-");
+  return `${d}.${m}`;
+}
 
 export default function FoodPage() {
   const [food, setFood] = useState<FoodPayload | null>(null);
@@ -10,6 +26,11 @@ export default function FoodPage() {
   const [log, setLog] = useState<FoodLogPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [kcalBusy, setKcalBusy] = useState(false);
+
+  // null — «сегодня» глазами сервера, ещё не знаем какое число; как только
+  // приходит первый ответ, запоминаем его дату как today и как selectedDate.
+  const [today, setToday] = useState<string | null>(null);
+  const [selectedDate, setSelectedDate] = useState<string | null>(null);
 
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<FoodItem[]>([]);
@@ -26,17 +47,30 @@ export default function FoodPage() {
   const [customF, setCustomF] = useState("");
   const [customC, setCustomC] = useState("");
 
-  function load() {
-    Promise.all([api.food(), api.supp(), api.foodLogToday()])
+  const [editingId, setEditingId] = useState<number | null>(null);
+  const [editGrams, setEditGrams] = useState("");
+  const [editLabel, setEditLabel] = useState("");
+  const [editKcal, setEditKcal] = useState("");
+
+  function load(date?: string) {
+    Promise.all([api.food(), api.supp(), api.foodLog(date)])
       .then(([f, s, l]) => {
         setFood(f);
         setSupp(s);
         setLog(l);
+        if (today === null) setToday(l.date);
+        setSelectedDate(l.date);
       })
       .catch((e: ApiError) => setError(e.message));
   }
 
-  useEffect(load, []);
+  useEffect(() => load(), []);
+
+  function goDay(delta: number) {
+    if (!selectedDate) return;
+    setEditingId(null);
+    load(addDays(selectedDate, delta));
+  }
 
   useEffect(() => {
     if (!query.trim()) {
@@ -116,7 +150,7 @@ export default function FoodPage() {
     const g = parseFloat(grams.replace(",", "."));
     if (isNaN(g) || g <= 0) return;
     try {
-      const l = await api.foodLogItem(picked.id, g);
+      const l = await api.foodLogItem(picked.id, g, selectedDate ?? undefined);
       setLog(l);
       setPicked(null);
       setQuery("");
@@ -131,7 +165,7 @@ export default function FoodPage() {
     const kcal = parseFloat(manualKcal.replace(",", "."));
     if (isNaN(kcal) || kcal <= 0) return;
     try {
-      const l = await api.foodLogManual(manualLabel || "Приём пищи", kcal, 0, 0, 0);
+      const l = await api.foodLogManual(manualLabel || "Приём пищи", kcal, 0, 0, 0, selectedDate ?? undefined);
       setLog(l);
       setManualLabel("");
       setManualKcal("");
@@ -162,15 +196,44 @@ export default function FoodPage() {
 
   async function removeEntry(id: number) {
     try {
-      const l = await api.foodLogDelete(id);
+      const l = await api.foodLogDelete(id, selectedDate ?? undefined);
       setLog(l);
+      if (editingId === id) setEditingId(null);
+    } catch (e) {
+      setError((e as ApiError).message);
+    }
+  }
+
+  function startEdit(entry: FoodLogEntry) {
+    setEditingId(entry.id);
+    setEditGrams(entry.grams != null ? String(entry.grams) : "");
+    setEditLabel(entry.label);
+    setEditKcal(String(entry.kcal));
+  }
+
+  async function saveEdit(entry: FoodLogEntry) {
+    try {
+      const l = entry.is_manual
+        ? await api.foodLogEditManual(
+            entry.id,
+            editLabel || "Приём пищи",
+            parseFloat(editKcal.replace(",", ".")) || 0,
+            entry.protein,
+            entry.fat,
+            entry.carbs,
+            selectedDate ?? undefined
+          )
+        : await api.foodLogEditItem(entry.id, parseFloat(editGrams.replace(",", ".")) || 0, selectedDate ?? undefined);
+      setLog(l);
+      setEditingId(null);
+      hapticNotify("success");
     } catch (e) {
       setError((e as ApiError).message);
     }
   }
 
   if (error) return <p className="hint">Ошибка: {error}</p>;
-  if (!food || !supp || !log) return <Loading cards={2} />;
+  if (!food || !supp || !log || !today) return <Loading cards={2} />;
 
   return (
     <div className="stack">
@@ -200,7 +263,20 @@ export default function FoodPage() {
       </div>
 
       <div className="card">
-        <h3>🍽 Дневник питания — сегодня</h3>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <h3 style={{ margin: 0 }}>🍽 Дневник питания</h3>
+          <div className="btn-row" style={{ gap: 4 }}>
+            <button className="btn small secondary" onClick={() => goDay(-1)}>
+              ←
+            </button>
+            <span className="hint" style={{ minWidth: 64, textAlign: "center", alignSelf: "center" }}>
+              {formatDayLabel(selectedDate ?? today, today)}
+            </span>
+            <button className="btn small secondary" disabled={selectedDate === today} onClick={() => goDay(1)}>
+              →
+            </button>
+          </div>
+        </div>
         <div className="row">
           <span className="label">Съедено</span>
           <span className="value">
@@ -216,20 +292,59 @@ export default function FoodPage() {
 
         {log.entries.length > 0 && (
           <div style={{ marginTop: 8 }}>
-            {log.entries.map((e) => (
-              <div className="row" key={e.id}>
-                <span className="label">
-                  {e.label}
-                  {e.grams ? ` (${e.grams} г)` : ""}
-                </span>
-                <span className="value">
-                  {e.kcal} ккал{" "}
-                  <button className="btn small secondary" style={{ marginLeft: 6, padding: "4px 8px" }} onClick={() => removeEntry(e.id)}>
-                    ✕
-                  </button>
-                </span>
-              </div>
-            ))}
+            {log.entries.map((e) =>
+              editingId === e.id ? (
+                <div className="stack" key={e.id} style={{ padding: "8px 0", borderBottom: "1px solid var(--tg-section-separator)" }}>
+                  {e.is_manual ? (
+                    <>
+                      <input type="text" value={editLabel} onChange={(ev) => setEditLabel(ev.target.value)} />
+                      <div className="btn-row">
+                        <input
+                          type="number"
+                          inputMode="decimal"
+                          placeholder="ккал"
+                          value={editKcal}
+                          onChange={(ev) => setEditKcal(ev.target.value)}
+                        />
+                      </div>
+                    </>
+                  ) : (
+                    <div className="btn-row">
+                      <span className="hint" style={{ alignSelf: "center" }}>{e.label}</span>
+                      <input
+                        type="number"
+                        inputMode="decimal"
+                        placeholder="граммы"
+                        value={editGrams}
+                        onChange={(ev) => setEditGrams(ev.target.value)}
+                        style={{ width: 90 }}
+                      />
+                    </div>
+                  )}
+                  <div className="btn-row">
+                    <button className="btn small secondary" onClick={() => setEditingId(null)}>
+                      Отмена
+                    </button>
+                    <button className="btn small" onClick={() => saveEdit(e)}>
+                      Сохранить
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="row" key={e.id}>
+                  <span className="label" style={{ cursor: "pointer" }} onClick={() => startEdit(e)}>
+                    {e.label}
+                    {e.grams ? ` (${e.grams} г)` : ""}
+                  </span>
+                  <span className="value">
+                    {e.kcal} ккал{" "}
+                    <button className="btn small secondary" style={{ marginLeft: 6, padding: "4px 8px" }} onClick={() => removeEntry(e.id)}>
+                      ✕
+                    </button>
+                  </span>
+                </div>
+              )
+            )}
           </div>
         )}
 

@@ -135,9 +135,11 @@ export interface FoodLogEntry {
   protein: number;
   fat: number;
   carbs: number;
+  is_manual: boolean;
 }
 
 export interface FoodLogPayload {
+  date: string;
   entries: FoodLogEntry[];
   totals: { kcal: number; protein: number; fat: number; carbs: number };
 }

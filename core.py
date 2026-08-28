@@ -1056,46 +1056,99 @@ def add_custom_food(chat_id: int, name: str, protein: float, fat: float, carbs: 
     return cur.lastrowid
 
 
-def log_food_by_item(chat_id: int, food_id: int, grams: float) -> None:
-    f = db.execute("SELECT * FROM foods WHERE id=?", (food_id,)).fetchone()
-    if not f:
-        raise ValueError("продукт не найден")
+def _food_macros(f, grams: float):
     factor = grams / 100.0
     kcal = round((f["protein"] * 4 + f["fat"] * 9 + f["carbs"] * 4) * factor)
     protein = round(f["protein"] * factor, 1)
     fat = round(f["fat"] * factor, 1)
     carbs = round(f["carbs"] * factor, 1)
+    return kcal, protein, fat, carbs
+
+
+def log_food_by_item(chat_id: int, food_id: int, grams: float, date: Optional[str] = None) -> None:
+    f = db.execute("SELECT * FROM foods WHERE id=?", (food_id,)).fetchone()
+    if not f:
+        raise ValueError("продукт не найден")
+    kcal, protein, fat, carbs = _food_macros(f, grams)
     db.execute(
         "INSERT INTO food_log (chat_id, date, food_id, grams, kcal, protein, fat, carbs, label)"
         " VALUES (?,?,?,?,?,?,?,?,?)",
-        (chat_id, today_str(), food_id, grams, kcal, protein, fat, carbs, f["name"]),
+        (chat_id, date or today_str(), food_id, grams, kcal, protein, fat, carbs, f["name"]),
     )
     db.commit()
 
 
-def log_food_manual(chat_id: int, label: str, kcal: float, protein: float = 0, fat: float = 0, carbs: float = 0) -> None:
+def log_food_manual(
+    chat_id: int, label: str, kcal: float, protein: float = 0, fat: float = 0, carbs: float = 0,
+    date: Optional[str] = None,
+) -> None:
     db.execute(
         "INSERT INTO food_log (chat_id, date, food_id, grams, kcal, protein, fat, carbs, label)"
         " VALUES (?,?,NULL,NULL,?,?,?,?,?)",
-        (chat_id, today_str(), kcal, protein, fat, carbs, label or "Приём пищи"),
+        (chat_id, date or today_str(), kcal, protein, fat, carbs, label or "Приём пищи"),
     )
     db.commit()
 
 
-def food_log_today(chat_id: int) -> dict:
+def food_log_for_date(chat_id: int, date: Optional[str] = None) -> dict:
+    date = date or today_str()
     rows = db.execute(
-        "SELECT id, label, grams, kcal, protein, fat, carbs FROM food_log"
+        "SELECT id, food_id, label, grams, kcal, protein, fat, carbs FROM food_log"
         " WHERE chat_id=? AND date=? ORDER BY id",
-        (chat_id, today_str()),
+        (chat_id, date),
     ).fetchall()
-    entries = [dict(r) for r in rows]
+    entries = [
+        {
+            "id": r["id"],
+            "label": r["label"],
+            "grams": r["grams"],
+            "kcal": r["kcal"],
+            "protein": r["protein"],
+            "fat": r["fat"],
+            "carbs": r["carbs"],
+            "is_manual": r["food_id"] is None,
+        }
+        for r in rows
+    ]
     totals = {
         "kcal": round(sum(r["kcal"] for r in entries)),
         "protein": round(sum(r["protein"] for r in entries), 1),
         "fat": round(sum(r["fat"] for r in entries), 1),
         "carbs": round(sum(r["carbs"] for r in entries), 1),
     }
-    return {"entries": entries, "totals": totals}
+    return {"date": date, "entries": entries, "totals": totals}
+
+
+def update_food_log_item(chat_id: int, entry_id: int, grams: float) -> None:
+    row = db.execute("SELECT * FROM food_log WHERE chat_id=? AND id=?", (chat_id, entry_id)).fetchone()
+    if not row:
+        raise ValueError("запись не найдена")
+    if row["food_id"] is None:
+        raise ValueError("это ручная запись — редактируется через update_food_log_manual")
+    f = db.execute("SELECT * FROM foods WHERE id=?", (row["food_id"],)).fetchone()
+    if not f:
+        raise ValueError("продукт не найден")
+    kcal, protein, fat, carbs = _food_macros(f, grams)
+    db.execute(
+        "UPDATE food_log SET grams=?, kcal=?, protein=?, fat=?, carbs=? WHERE id=?",
+        (grams, kcal, protein, fat, carbs, entry_id),
+    )
+    db.commit()
+
+
+def update_food_log_manual(
+    chat_id: int, entry_id: int, label: str, kcal: float, protein: float = 0, fat: float = 0, carbs: float = 0
+) -> None:
+    row = db.execute("SELECT * FROM food_log WHERE chat_id=? AND id=?", (chat_id, entry_id)).fetchone()
+    if not row:
+        raise ValueError("запись не найдена")
+    if row["food_id"] is not None:
+        raise ValueError("это запись по продукту — редактируется через update_food_log_item")
+    db.execute(
+        "UPDATE food_log SET label=?, kcal=?, protein=?, fat=?, carbs=? WHERE id=?",
+        (label or "Приём пищи", kcal, protein, fat, carbs, entry_id),
+    )
+    db.commit()
 
 
 def delete_food_log(chat_id: int, entry_id: int) -> None:
