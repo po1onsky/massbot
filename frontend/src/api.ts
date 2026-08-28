@@ -64,6 +64,8 @@ export const api = {
     request<FoodPayload>("/kcal", { method: "POST", body: JSON.stringify({ delta }) }),
   supp: () => request<SuppPayload>("/supp"),
   suppMark: () => request<SuppPayload>("/supp/mark", { method: "POST" }),
+  setPrefs: (prefs: { wants_shake?: boolean; wants_supplements?: boolean }) =>
+    request<{ food: FoodPayload; supp: SuppPayload }>("/prefs", { method: "POST", body: JSON.stringify(prefs) }),
   plan: () => request<PlanPayload>("/plan"),
   days: (days: number[]) =>
     request<{ training_days: string }>("/days", {

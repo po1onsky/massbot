@@ -71,6 +71,26 @@ export default function FoodPage() {
     }
   }
 
+  async function toggleShakePref() {
+    if (!food) return;
+    try {
+      const res = await api.setPrefs({ wants_shake: !food.wants_shake });
+      setFood(res.food);
+    } catch (e) {
+      setError((e as ApiError).message);
+    }
+  }
+
+  async function toggleSuppPref() {
+    if (!supp) return;
+    try {
+      const res = await api.setPrefs({ wants_supplements: !supp.wants_supplements });
+      setSupp(res.supp);
+    } catch (e) {
+      setError((e as ApiError).message);
+    }
+  }
+
   async function addItem() {
     if (!picked) return;
     const g = parseFloat(grams.replace(",", "."));
@@ -269,8 +289,17 @@ export default function FoodPage() {
       </div>
 
       <div className="card">
-        <h3>Шейк и база рациона</h3>
-        <p className="hint" style={{ whiteSpace: "pre-line" }}>{food.shake}</p>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <h3 style={{ margin: 0 }}>Шейк и база рациона</h3>
+          <button className="btn small secondary" onClick={toggleShakePref}>
+            {food.wants_shake ? "Скрыть" : "Показать"}
+          </button>
+        </div>
+        {food.wants_shake ? (
+          food.shake && <p className="hint" style={{ whiteSpace: "pre-line" }}>{food.shake}</p>
+        ) : (
+          <p className="hint">Рекомендация по шейку скрыта — не хочешь пить шейк, не проблема.</p>
+        )}
         <p className="hint" style={{ marginTop: 8 }}>
           База: рис, макароны, картошка, овсянка, хлеб; яйца, курица, фарш, творог, рыба; молоко 2–3%;
           масло, орехи, авокадо; овощи и фрукты — но не перед основной едой.
@@ -278,27 +307,38 @@ export default function FoodPage() {
       </div>
 
       <div className="card">
-        <h3>💊 Добавки</h3>
-        {supp.supplements.map((s) => (
-          <div className="hint" key={s} style={{ marginBottom: 4 }}>
-            • {s}
-          </div>
-        ))}
-        <div className="row" style={{ marginTop: 8 }}>
-          <span className="label">Серия без пропусков</span>
-          <span className="value">{supp.streak} дн.</span>
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 8 }}>
+          <h3 style={{ margin: 0 }}>💊 Добавки</h3>
+          <button className="btn small secondary" onClick={toggleSuppPref}>
+            {supp.wants_supplements ? "Скрыть" : "Показать"}
+          </button>
         </div>
-        <button
-          className="btn"
-          style={{ marginTop: 10 }}
-          disabled={supp.marked_today}
-          onClick={markSupp}
-        >
-          {supp.marked_today ? "Сегодня отмечено ✅" : "Отметить креатин на сегодня"}
-        </button>
-        <p className="hint" style={{ marginTop: 8 }}>
-          Не тратить деньги: BCAA, глютамин, тестобустеры, ZMA. Сон 7–9 часов влияет на набор сильнее всего списка выше.
-        </p>
+        {supp.wants_supplements ? (
+          <>
+            {supp.supplements.map((s) => (
+              <div className="hint" key={s} style={{ marginBottom: 4 }}>
+                • {s}
+              </div>
+            ))}
+            <div className="row" style={{ marginTop: 8 }}>
+              <span className="label">Серия без пропусков</span>
+              <span className="value">{supp.streak} дн.</span>
+            </div>
+            <button
+              className="btn"
+              style={{ marginTop: 10 }}
+              disabled={supp.marked_today}
+              onClick={markSupp}
+            >
+              {supp.marked_today ? "Сегодня отмечено ✅" : "Отметить креатин на сегодня"}
+            </button>
+            <p className="hint" style={{ marginTop: 8 }}>
+              Не тратить деньги: BCAA, глютамин, тестобустеры, ZMA. Сон 7–9 часов влияет на набор сильнее всего списка выше.
+            </p>
+          </>
+        ) : (
+          <p className="hint">Добавки не принимаешь — блок скрыт, включишь в любой момент.</p>
+        )}
       </div>
     </div>
   );

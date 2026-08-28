@@ -164,6 +164,17 @@ def post_supp_mark(auth: AuthUser = Depends(get_current_user)):
     return core.supp_mark(_user(auth))
 
 
+class PrefsIn(BaseModel):
+    wants_shake: Optional[bool] = None
+    wants_supplements: Optional[bool] = None
+
+
+@api.post("/prefs")
+def post_prefs(body: PrefsIn, auth: AuthUser = Depends(get_current_user)):
+    u = _user(auth)
+    return core.set_prefs(u, body.wants_shake, body.wants_supplements)
+
+
 @api.get("/plan")
 def get_plan(auth: AuthUser = Depends(get_current_user)):
     return core.plan_payload(_user(auth))

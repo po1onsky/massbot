@@ -159,13 +159,15 @@ export interface FoodPayload {
   protein: number;
   fat: number;
   carbs: number;
-  shake: string;
+  shake: string | null;
+  wants_shake: boolean;
 }
 
 export interface SuppPayload {
   supplements: string[];
   marked_today: boolean;
   streak: number;
+  wants_supplements: boolean;
 }
 
 export interface PlanExercise {

@@ -16,6 +16,7 @@ from program import (
     PHASES,
     SUPPLEMENTS,
     SHAKE,
+    SHAKE_LOSE,
     FOOD_CATALOG,
     BEGINNER_START,
     BLOCK_WEEKS,
@@ -113,6 +114,10 @@ def init_db() -> None:
         ("protein_g", "INTEGER"),
         ("fat_g", "INTEGER"),
         ("carbs_g", "INTEGER"),
+        # DEFAULT 1 — у всех существующих пользователей (легаси в том числе)
+        # оба блока остаются включены как раньше, ничего не меняется молча.
+        ("wants_shake", "INTEGER NOT NULL DEFAULT 1"),
+        ("wants_supplements", "INTEGER NOT NULL DEFAULT 1"),
     ]
     for name, decl in migrations:
         if name not in cols:
@@ -587,6 +592,18 @@ def plot_payload(u) -> dict:
     }
 
 
+def _shake_for(u) -> Optional[str]:
+    """Текст рекомендации шейка — или None, если пользователь её выключил.
+    На сброс веса калорийный шейк (~800 ккал) противоречит цели — подставляем
+    лёгкий вариант вместо него. Легаси-программа всегда про набор — ей и
+    прежний рецепт годится."""
+    if not u["wants_shake"]:
+        return None
+    if is_new_style(u) and u["goal"] == "lose":
+        return SHAKE_LOSE
+    return SHAKE
+
+
 def food_payload(u) -> dict:
     if is_new_style(u) and u["kcal_base"] is not None:
         kcal = u["kcal_base"] + u["kcal_offset"]
@@ -597,7 +614,8 @@ def food_payload(u) -> dict:
             "protein": u["protein_g"],
             "fat": u["fat_g"],
             "carbs": u["carbs_g"],
-            "shake": SHAKE,
+            "shake": _shake_for(u),
+            "wants_shake": bool(u["wants_shake"]),
         }
     _, phase = current_phase(u)
     kcal = phase["kcal"] + u["kcal_offset"]
@@ -608,7 +626,8 @@ def food_payload(u) -> dict:
         "protein": phase["protein"],
         "fat": phase["fat"],
         "carbs": phase["carbs"],
-        "shake": SHAKE,
+        "shake": _shake_for(u),
+        "wants_shake": bool(u["wants_shake"]),
     }
 
 
@@ -617,6 +636,19 @@ def set_kcal_offset(u, delta: int) -> int:
     db.execute("UPDATE users SET kcal_offset=? WHERE chat_id=?", (new, u["chat_id"]))
     db.commit()
     return new
+
+
+def set_prefs(u, wants_shake: Optional[bool] = None, wants_supplements: Optional[bool] = None) -> dict:
+    """Личные предпочтения по блокам «Питания» — включаются/выключаются прямо
+    на странице, не только на онбординге. Хранятся на пользователе, поэтому
+    сохраняются между сессиями."""
+    if wants_shake is not None:
+        db.execute("UPDATE users SET wants_shake=? WHERE chat_id=?", (int(wants_shake), u["chat_id"]))
+    if wants_supplements is not None:
+        db.execute("UPDATE users SET wants_supplements=? WHERE chat_id=?", (int(wants_supplements), u["chat_id"]))
+    db.commit()
+    u2 = get_user(u["chat_id"])
+    return {"food": food_payload(u2), "supp": supp_payload(u2)}
 
 
 def supp_payload(u) -> dict:
@@ -635,7 +667,13 @@ def supp_payload(u) -> dict:
     ).fetchone():
         streak += 1
         d -= dt.timedelta(days=1)
-    return {"supplements": SUPPLEMENTS, "marked_today": marked_today, "streak": streak}
+    wants_supplements = bool(u["wants_supplements"])
+    return {
+        "supplements": SUPPLEMENTS if wants_supplements else [],
+        "marked_today": marked_today,
+        "streak": streak,
+        "wants_supplements": wants_supplements,
+    }
 
 
 def supp_mark(u) -> dict:
