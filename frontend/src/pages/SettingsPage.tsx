@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { hapticNotify } from "../telegram";
-import type { Equipment, Experience, Goal, MePayload } from "../types";
+import type { Equipment, Experience, Goal, MePayload, SplitOption } from "../types";
 
 const DAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
@@ -45,6 +45,9 @@ export default function SettingsPage({ onProfileChanged }: { onProfileChanged: (
   const [programOpen, setProgramOpen] = useState(false);
   const [equipment, setEquipment] = useState<Equipment>("gym");
   const [experience, setExperience] = useState<Experience>("experienced");
+  const [splitOptions, setSplitOptions] = useState<SplitOption[]>([]);
+  const [splitKey, setSplitKey] = useState<string | null>(null);
+  const [splitsLoading, setSplitsLoading] = useState(false);
   const [programMsg, setProgramMsg] = useState<string | null>(null);
   const [programBusy, setProgramBusy] = useState(false);
 
@@ -59,11 +62,26 @@ export default function SettingsPage({ onProfileChanged }: { onProfileChanged: (
         setTargetWeeks(m.target_weeks ? String(m.target_weeks) : "");
         setEquipment(m.equipment);
         setExperience(m.experience);
+        setSplitKey(m.split_key);
       })
       .catch((e: ApiError) => setError(e.message));
   }
 
   useEffect(load, []);
+
+  useEffect(() => {
+    if (!programOpen || days.size === 0) return;
+    setSplitsLoading(true);
+    api
+      .splits(days.size)
+      .then((opts) => {
+        setSplitOptions(opts);
+        setSplitKey((prev) => (opts.some((o) => o.key === prev) ? prev : opts[0]?.key ?? null));
+      })
+      .catch(() => setSplitOptions([]))
+      .finally(() => setSplitsLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [programOpen, days.size]);
 
   function toggle(idx: number) {
     setSaved(false);
@@ -109,7 +127,7 @@ export default function SettingsPage({ onProfileChanged }: { onProfileChanged: (
     setProgramBusy(true);
     setProgramMsg(null);
     try {
-      await api.setProgram(equipment, experience, Array.from(days), {});
+      await api.setProgram(equipment, experience, Array.from(days), splitKey, {});
       setProgramMsg("Программа пересобрана ✅");
       hapticNotify("success");
       onProfileChanged();
@@ -225,6 +243,24 @@ export default function SettingsPage({ onProfileChanged }: { onProfileChanged: (
           </button>
         ) : (
           <div className="stack">
+            <div className="hint">Тип программы (доступные варианты зависят от числа дней тренировок выше)</div>
+            {splitsLoading && <div className="hint">Загрузка вариантов…</div>}
+            {splitOptions.map((o) => (
+              <button
+                key={o.key}
+                className={`choice-toggle ${splitKey === o.key ? "selected" : ""}`}
+                style={{ textAlign: "left" }}
+                onClick={() => setSplitKey(o.key)}
+              >
+                <div style={{ fontWeight: 600 }}>{o.label}</div>
+                <div className="hint" style={{ marginTop: 2 }}>
+                  {o.description}
+                </div>
+                <div className="hint" style={{ marginTop: 2 }}>
+                  {o.days_titles.join(" · ")}
+                </div>
+              </button>
+            ))}
             <div className="hint">Оборудование</div>
             <ChoiceRow
               options={[

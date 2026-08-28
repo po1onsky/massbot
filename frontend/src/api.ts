@@ -13,6 +13,7 @@ import type {
   OnboardingResult,
   PlanPayload,
   PlotPayload,
+  SplitOption,
   StatsPayload,
   SuppPayload,
   TodayPayload,
@@ -46,7 +47,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 export const api = {
   me: () => request<MePayload>("/me"),
   today: () => request<TodayPayload>("/today"),
-  log: (entries: { key: string; weight: number; reps: number[] }[], skipped: string[]) =>
+  log: (
+    entries: { key: string; weight: number; reps: number[]; substitute_name?: string }[],
+    skipped: string[]
+  ) =>
     request<{ session_id: number; notes: LogNote[] }>("/log", {
       method: "POST",
       body: JSON.stringify({ entries, skipped }),
@@ -77,12 +81,14 @@ export const api = {
     equipment: Equipment,
     experience: Experience,
     training_days: number[],
+    split_key: string | null,
     starting_weights: Record<string, number>
   ) =>
     request<MePayload>("/program", {
       method: "POST",
-      body: JSON.stringify({ equipment, experience, training_days, starting_weights }),
+      body: JSON.stringify({ equipment, experience, training_days, split_key, starting_weights }),
     }),
+  splits: (days: number) => request<SplitOption[]>(`/splits?days=${days}`),
   foodSearch: (q: string) => request<FoodItem[]>(`/food/search?q=${encodeURIComponent(q)}`),
   foodLogToday: () => request<FoodLogPayload>("/food/log/today"),
   foodLogItem: (food_id: number, grams: number) =>

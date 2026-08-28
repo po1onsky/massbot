@@ -247,6 +247,27 @@ EXERCISE_POOL = {
         {"equipment": "dumbbell", "name": "Подъём гантелей на бицепс", "kind": "weight", "sets": 3, "reps": 12, "step": 2.0},
         {"equipment": "none", "name": "Отжимания узким хватом", "kind": "bodyweight", "sets": 3, "reps": 15, "step": 0},
     ],
+    # biceps/triceps — то же самое, что "arms", но раздельно: нужно для
+    # сплитов по группам мышц (день спины с бицепсом, день груди с трицепсом).
+    "biceps": [
+        {"equipment": "barbell", "name": "Подъём штанги на бицепс", "kind": "weight", "sets": 3, "reps": 12, "step": 2.5},
+        {"equipment": "dumbbell", "name": "Подъём гантелей на бицепс", "kind": "weight", "sets": 3, "reps": 12, "step": 2.0},
+        {"equipment": "none", "name": "Подтягивания обратным хватом", "kind": "bodyweight", "sets": 3, "reps": 8, "step": 0},
+    ],
+    "triceps": [
+        {"equipment": "barbell", "name": "Французский жим лёжа", "kind": "weight", "sets": 3, "reps": 12, "step": 2.5},
+        {"equipment": "dumbbell", "name": "Разгибание гантели из-за головы", "kind": "weight", "sets": 3, "reps": 12, "step": 2.0},
+        {"equipment": "none", "name": "Отжимания узким хватом", "kind": "bodyweight", "sets": 3, "reps": 15, "step": 0},
+    ],
+    # изолирующая добавка к жимовым дням (грудь/плечи) в сплитах по группам мышц
+    "chest_acc": [
+        {"equipment": "dumbbell", "name": "Разводка гантелей лёжа", "kind": "weight", "sets": 3, "reps": 12, "step": 2.0},
+        {"equipment": "none", "name": "Отжимания с широкой постановкой рук", "kind": "bodyweight", "sets": 3, "reps": 15, "step": 0},
+    ],
+    "shoulder_acc": [
+        {"equipment": "dumbbell", "name": "Махи гантелями в стороны", "kind": "weight", "sets": 3, "reps": 15, "step": 1.0},
+        {"equipment": "none", "name": "Разведение рук с бутылками/эспандером", "kind": "bodyweight", "sets": 3, "reps": 20, "step": 0},
+    ],
     "core": [
         {"equipment": "any", "name": "Планка", "kind": "time", "sets": 3, "reps": 40, "step": 0},
     ],
@@ -283,51 +304,174 @@ BEGINNER_START = {
     ("legs_acc", "gym"): 40.0, ("legs_acc", "dumbbell"): 6.0,
     ("calf", "gym"): 20.0, ("calf", "dumbbell"): 6.0,
     ("arms", "gym"): 10.0, ("arms", "dumbbell"): 4.0,
+    ("biceps", "gym"): 10.0, ("biceps", "dumbbell"): 4.0,
+    ("triceps", "gym"): 10.0, ("triceps", "dumbbell"): 4.0,
+    ("chest_acc", "gym"): 6.0, ("chest_acc", "dumbbell"): 6.0,
+    ("shoulder_acc", "gym"): 3.0, ("shoulder_acc", "dumbbell"): 3.0,
 }
 
 # Сплит по числу тренировочных дней в неделю (1–6, больше 6 — берём как 6).
+# На каждое число дней — список ИМЕНОВАННЫХ вариантов (не один жёсткий сплит):
+# пользователь выбирает, что ему комфортнее — фулбоди, push/pull/legs или
+# классика "по группам мышц" (грудь/спина/ноги...). Первый вариант в списке —
+# используется по умолчанию, если конкретный split_key не задан/не найден.
 SPLIT_TEMPLATES = {
     1: [
-        {"code": "A", "title": "Фулбоди", "patterns": ["squat", "hinge", "push_h", "pull_h", "legs_acc", "core"]},
+        {
+            "key": "full_body",
+            "label": "Фулбоди",
+            "description": "Всё тело за одну тренировку в неделю.",
+            "days": [
+                {"code": "A", "title": "Фулбоди", "patterns": ["squat", "hinge", "push_h", "pull_h", "legs_acc", "core"]},
+            ],
+        },
     ],
     2: [
-        {"code": "A", "title": "Фулбоди A", "patterns": ["squat", "push_h", "pull_h", "calf", "core"]},
-        {"code": "B", "title": "Фулбоди B", "patterns": ["hinge", "push_v", "pull_v", "legs_acc", "arms"]},
+        {
+            "key": "full_body",
+            "label": "Фулбоди A/B",
+            "description": "Всё тело, два разных дня по очереди.",
+            "days": [
+                {"code": "A", "title": "Фулбоди A", "patterns": ["squat", "push_h", "pull_h", "calf", "core"]},
+                {"code": "B", "title": "Фулбоди B", "patterns": ["hinge", "push_v", "pull_v", "legs_acc", "arms"]},
+            ],
+        },
     ],
     3: [
-        {"code": "A", "title": "Фулбоди A", "patterns": ["squat", "push_h", "pull_h", "calf", "core"]},
-        {"code": "B", "title": "Фулбоди B", "patterns": ["hinge", "push_v", "pull_v", "legs_acc", "arms"]},
-        {"code": "C", "title": "Фулбоди C", "patterns": ["squat", "push_v", "pull_h", "legs_acc", "core"]},
+        {
+            "key": "full_body",
+            "label": "Фулбоди A/B/C",
+            "description": "Всё тело три раза в неделю, дни чередуются.",
+            "days": [
+                {"code": "A", "title": "Фулбоди A", "patterns": ["squat", "push_h", "pull_h", "calf", "core"]},
+                {"code": "B", "title": "Фулбоди B", "patterns": ["hinge", "push_v", "pull_v", "legs_acc", "arms"]},
+                {"code": "C", "title": "Фулбоди C", "patterns": ["squat", "push_v", "pull_h", "legs_acc", "core"]},
+            ],
+        },
+        {
+            "key": "ppl",
+            "label": "Push / Pull / Legs",
+            "description": "Жимовой день, тяговый день, ноги.",
+            "days": [
+                {"code": "P", "title": "Push (жим)", "patterns": ["push_h", "push_v", "chest_acc", "triceps"]},
+                {"code": "Pl", "title": "Pull (тяга)", "patterns": ["pull_h", "pull_v", "biceps", "core"]},
+                {"code": "L", "title": "Ноги", "patterns": ["squat", "hinge", "legs_acc", "calf"]},
+            ],
+        },
+        {
+            "key": "bro",
+            "label": "По группам мышц",
+            "description": "Грудь+трицепс / Спина+бицепс / Ноги+плечи.",
+            "days": [
+                {"code": "CT", "title": "Грудь + трицепс", "patterns": ["push_h", "chest_acc", "triceps", "core"]},
+                {"code": "BB", "title": "Спина + бицепс", "patterns": ["pull_h", "pull_v", "biceps"]},
+                {"code": "LS", "title": "Ноги + плечи", "patterns": ["squat", "hinge", "legs_acc", "calf", "push_v", "shoulder_acc"]},
+            ],
+        },
     ],
     4: [
-        {"code": "U1", "title": "Верх A", "patterns": ["push_h", "pull_h", "push_v", "arms", "core"]},
-        {"code": "L1", "title": "Низ A", "patterns": ["squat", "hinge", "legs_acc", "calf"]},
-        {"code": "U2", "title": "Верх B", "patterns": ["push_v", "pull_v", "push_h", "arms", "core"]},
-        {"code": "L2", "title": "Низ B", "patterns": ["hinge", "squat", "legs_acc", "calf"]},
+        {
+            "key": "upper_lower",
+            "label": "Верх / Низ",
+            "description": "Верх тела и низ тела по очереди, два раза каждый.",
+            "days": [
+                {"code": "U1", "title": "Верх A", "patterns": ["push_h", "pull_h", "push_v", "arms", "core"]},
+                {"code": "L1", "title": "Низ A", "patterns": ["squat", "hinge", "legs_acc", "calf"]},
+                {"code": "U2", "title": "Верх B", "patterns": ["push_v", "pull_v", "push_h", "arms", "core"]},
+                {"code": "L2", "title": "Низ B", "patterns": ["hinge", "squat", "legs_acc", "calf"]},
+            ],
+        },
+        {
+            "key": "bro",
+            "label": "По группам мышц",
+            "description": "Грудь / Спина / Ноги / Плечи+руки.",
+            "days": [
+                {"code": "C", "title": "Грудь", "patterns": ["push_h", "chest_acc", "triceps", "core"]},
+                {"code": "B", "title": "Спина", "patterns": ["pull_h", "pull_v", "biceps"]},
+                {"code": "L", "title": "Ноги", "patterns": ["squat", "hinge", "legs_acc", "calf"]},
+                {"code": "S", "title": "Плечи + руки", "patterns": ["push_v", "shoulder_acc", "biceps", "triceps"]},
+            ],
+        },
     ],
     5: [
-        {"code": "P", "title": "Push (жимовая)", "patterns": ["push_h", "push_v", "arms", "core"]},
-        {"code": "Pl", "title": "Pull (тяговая)", "patterns": ["pull_h", "pull_v", "arms"]},
-        {"code": "L", "title": "Ноги", "patterns": ["squat", "hinge", "legs_acc", "calf"]},
-        {"code": "U", "title": "Верх", "patterns": ["push_h", "pull_h", "push_v", "core"]},
-        {"code": "Lw", "title": "Низ", "patterns": ["hinge", "squat", "legs_acc", "calf"]},
+        {
+            "key": "ppl_ul",
+            "label": "Push/Pull/Legs + Верх/Низ",
+            "description": "Пять разных дней без повторов паттернов подряд.",
+            "days": [
+                {"code": "P", "title": "Push (жимовая)", "patterns": ["push_h", "push_v", "arms", "core"]},
+                {"code": "Pl", "title": "Pull (тяговая)", "patterns": ["pull_h", "pull_v", "arms"]},
+                {"code": "L", "title": "Ноги", "patterns": ["squat", "hinge", "legs_acc", "calf"]},
+                {"code": "U", "title": "Верх", "patterns": ["push_h", "pull_h", "push_v", "core"]},
+                {"code": "Lw", "title": "Низ", "patterns": ["hinge", "squat", "legs_acc", "calf"]},
+            ],
+        },
+        {
+            "key": "bro",
+            "label": "По группам мышц",
+            "description": "Грудь / Спина / Ноги / Плечи / Руки — классика.",
+            "days": [
+                {"code": "C", "title": "Грудь", "patterns": ["push_h", "chest_acc", "core"]},
+                {"code": "B", "title": "Спина", "patterns": ["pull_h", "pull_v"]},
+                {"code": "L", "title": "Ноги", "patterns": ["squat", "hinge", "legs_acc", "calf"]},
+                {"code": "S", "title": "Плечи", "patterns": ["push_v", "shoulder_acc"]},
+                {"code": "A", "title": "Руки", "patterns": ["biceps", "triceps", "core"]},
+            ],
+        },
     ],
     6: [
-        {"code": "P1", "title": "Push A", "patterns": ["push_h", "push_v", "arms", "core"]},
-        {"code": "Pl1", "title": "Pull A", "patterns": ["pull_h", "pull_v", "arms"]},
-        {"code": "L1", "title": "Ноги A", "patterns": ["squat", "hinge", "legs_acc", "calf"]},
-        {"code": "P2", "title": "Push B", "patterns": ["push_v", "push_h", "arms", "core"]},
-        {"code": "Pl2", "title": "Pull B", "patterns": ["pull_v", "pull_h", "arms"]},
-        {"code": "L2", "title": "Ноги B", "patterns": ["hinge", "squat", "legs_acc", "calf"]},
+        {
+            "key": "ppl_x2",
+            "label": "Push/Pull/Legs ×2",
+            "description": "Push/Pull/Legs дважды за неделю.",
+            "days": [
+                {"code": "P1", "title": "Push A", "patterns": ["push_h", "push_v", "arms", "core"]},
+                {"code": "Pl1", "title": "Pull A", "patterns": ["pull_h", "pull_v", "arms"]},
+                {"code": "L1", "title": "Ноги A", "patterns": ["squat", "hinge", "legs_acc", "calf"]},
+                {"code": "P2", "title": "Push B", "patterns": ["push_v", "push_h", "arms", "core"]},
+                {"code": "Pl2", "title": "Pull B", "patterns": ["pull_v", "pull_h", "arms"]},
+                {"code": "L2", "title": "Ноги B", "patterns": ["hinge", "squat", "legs_acc", "calf"]},
+            ],
+        },
+        {
+            "key": "bro",
+            "label": "По группам мышц",
+            "description": "Грудь+спина / Плечи+руки / Ноги — по кругу дважды (Arnold split).",
+            "days": [
+                {"code": "CB1", "title": "Грудь + спина", "patterns": ["push_h", "pull_h", "chest_acc", "pull_v"]},
+                {"code": "SA1", "title": "Плечи + руки", "patterns": ["push_v", "shoulder_acc", "biceps", "triceps"]},
+                {"code": "L1", "title": "Ноги", "patterns": ["squat", "hinge", "legs_acc", "calf"]},
+                {"code": "CB2", "title": "Грудь + спина", "patterns": ["push_h", "pull_h", "chest_acc", "pull_v"]},
+                {"code": "SA2", "title": "Плечи + руки", "patterns": ["push_v", "shoulder_acc", "biceps", "triceps"]},
+                {"code": "L2", "title": "Ноги", "patterns": ["squat", "hinge", "legs_acc", "calf"]},
+            ],
+        },
     ],
 }
 
 
-def generate_workout_templates(equipment: str, days_count: int) -> list:
+def available_splits(days_count: int) -> list:
+    """Варианты сплита для данного числа тренировочных дней — для экрана выбора."""
     days_count = max(1, min(int(days_count or 1), 6))
-    template = SPLIT_TEMPLATES[days_count]
+    return [
+        {
+            "key": v["key"],
+            "label": v["label"],
+            "description": v["description"],
+            "days_titles": [d["title"] for d in v["days"]],
+        }
+        for v in SPLIT_TEMPLATES[days_count]
+    ]
+
+
+def generate_workout_templates(equipment: str, days_count: int, split_key: str = None) -> tuple:
+    """Возвращает (days, resolved_split_key). Если split_key не задан или не
+    существует для этого числа дней — используется первый вариант из списка."""
+    days_count = max(1, min(int(days_count or 1), 6))
+    variants = SPLIT_TEMPLATES[days_count]
+    variant = next((v for v in variants if v["key"] == split_key), variants[0])
     days = []
-    for d in template:
+    for d in variant["days"]:
         exercises = []
         for pattern in d["patterns"]:
             ex = pick_exercise(pattern, equipment)
@@ -342,7 +486,7 @@ def generate_workout_templates(equipment: str, days_count: int) -> list:
                 }
             )
         days.append({"code": d["code"], "title": d["title"], "exercises": exercises})
-    return days
+    return days, variant["key"]
 
 
 # ------------------------------------------------------------------ блоки/периодизация

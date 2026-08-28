@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { hapticNotify } from "../telegram";
-import type { Equipment, Experience, Goal, OnboardingIn, Sex } from "../types";
+import type { Equipment, Experience, Goal, OnboardingIn, Sex, SplitOption } from "../types";
 
 const DAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
@@ -70,6 +70,9 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
   const [targetWeeks, setTargetWeeks] = useState("");
 
   const [days, setDays] = useState<Set<number>>(new Set([0, 2, 4]));
+  const [splitOptions, setSplitOptions] = useState<SplitOption[]>([]);
+  const [splitKey, setSplitKey] = useState<string | null>(null);
+  const [splitsLoading, setSplitsLoading] = useState(false);
   const [equipment, setEquipment] = useState<Equipment | null>(null);
   const [experience, setExperience] = useState<Experience | null>(null);
   const [startingWeights, setStartingWeights] = useState<Record<string, string>>({});
@@ -82,6 +85,20 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
       return next;
     });
   }
+
+  useEffect(() => {
+    if (days.size === 0) return;
+    setSplitsLoading(true);
+    api
+      .splits(days.size)
+      .then((opts) => {
+        setSplitOptions(opts);
+        setSplitKey((prev) => (opts.some((o) => o.key === prev) ? prev : opts[0]?.key ?? null));
+      })
+      .catch(() => setSplitOptions([]))
+      .finally(() => setSplitsLoading(false));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [days.size]);
 
   const cw = parseFloat(currentWeight.replace(",", "."));
   const tw = parseFloat(targetWeight.replace(",", "."));
@@ -183,6 +200,31 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
       ),
     },
     {
+      title: "Тип программы",
+      valid: splitKey !== null,
+      body: (
+        <div className="stack">
+          {splitsLoading && <div className="hint">Загрузка вариантов…</div>}
+          {splitOptions.map((o) => (
+            <button
+              key={o.key}
+              className={`choice-toggle ${splitKey === o.key ? "selected" : ""}`}
+              style={{ textAlign: "left" }}
+              onClick={() => setSplitKey(o.key)}
+            >
+              <div style={{ fontWeight: 600 }}>{o.label}</div>
+              <div className="hint" style={{ marginTop: 2 }}>
+                {o.description}
+              </div>
+              <div className="hint" style={{ marginTop: 2 }}>
+                {o.days_titles.join(" · ")}
+              </div>
+            </button>
+          ))}
+        </div>
+      ),
+    },
+    {
       title: "Оборудование",
       valid: equipment !== null,
       body: (
@@ -254,6 +296,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
         equipment: equipment as Equipment,
         experience: experience as Experience,
         training_days: Array.from(days),
+        split_key: splitKey,
         starting_weights: Object.fromEntries(
           Object.entries(startingWeights)
             .map(([k, v]) => [k, parseFloat(v)])

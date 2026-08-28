@@ -1,15 +1,23 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { haptic, hapticNotify } from "../telegram";
-import type { LogNote, TodayExercise, TodayPayload } from "../types";
+import type { ExerciseKind, LogNote, TodayExercise, TodayPayload } from "../types";
 
 type SetsState = Record<string, { weight: string; reps: string[] }>;
+type Substitute = { name: string; kind: ExerciseKind; sets: number; reps: number };
+type SubstitutesState = Record<string, Substitute | undefined>;
 
 function targetText(e: TodayExercise): string {
   if (e.kind === "time") return `${e.sets}×${e.reps} сек`;
   if (e.kind === "bodyweight") return `${e.sets}×${e.reps} (свой вес)`;
   if (e.working_weight != null) return `${e.sets}×${e.reps} → ${e.working_weight} кг`;
   return `${e.sets}×${e.reps} → подбери вес, 3–4 повтора в запасе`;
+}
+
+function subTargetText(s: Substitute): string {
+  if (s.kind === "time") return `${s.sets}×${s.reps} сек`;
+  if (s.kind === "bodyweight") return `${s.sets}×${s.reps} (свой вес)`;
+  return `${s.sets}×${s.reps} → подбери вес`;
 }
 
 function unitLabel(kind: TodayExercise["kind"]): string {
@@ -33,6 +41,9 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
   const [mode, setMode] = useState<"view" | "log" | "result">("view");
   const [sets, setSets] = useState<SetsState>({});
   const [skipped, setSkipped] = useState<Set<string>>(new Set());
+  const [substitutes, setSubstitutes] = useState<SubstitutesState>({});
+  const [pickerOpen, setPickerOpen] = useState<Set<string>>(new Set());
+  const [customSubName, setCustomSubName] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
   const [notes, setNotes] = useState<LogNote[]>([]);
   const [weightInput, setWeightInput] = useState("");
@@ -87,6 +98,50 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
     });
   }
 
+  function togglePicker(key: string) {
+    setPickerOpen((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) next.delete(key);
+      else next.add(key);
+      return next;
+    });
+  }
+
+  function pickAlternative(e: TodayExercise, sub: Substitute) {
+    setSubstitutes((prev) => ({ ...prev, [e.key]: sub }));
+    setSets((prev) => ({
+      ...prev,
+      [e.key]: { weight: "", reps: Array.from({ length: sub.sets }, () => String(sub.reps)) },
+    }));
+    setPickerOpen((prev) => {
+      const next = new Set(prev);
+      next.delete(e.key);
+      return next;
+    });
+  }
+
+  function pickCustom(e: TodayExercise) {
+    const name = (customSubName[e.key] || "").trim();
+    if (!name) return;
+    pickAlternative(e, { name, kind: e.kind, sets: e.sets, reps: e.reps });
+    setCustomSubName((prev) => ({ ...prev, [e.key]: "" }));
+  }
+
+  function clearSubstitute(e: TodayExercise) {
+    setSubstitutes((prev) => {
+      const next = { ...prev };
+      delete next[e.key];
+      return next;
+    });
+    setSets((prev) => ({
+      ...prev,
+      [e.key]: {
+        weight: e.working_weight != null ? String(e.working_weight) : "",
+        reps: Array.from({ length: e.sets }, () => String(e.reps)),
+      },
+    }));
+  }
+
   async function submitLog() {
     if (!today) return;
     setSubmitting(true);
@@ -97,6 +152,7 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
           key: e.key,
           weight: parseFloat(sets[e.key].weight.replace(",", ".")) || 0,
           reps: sets[e.key].reps.map((r) => parseInt(r, 10)).filter((n) => !isNaN(n) && n >= 0),
+          ...(substitutes[e.key] ? { substitute_name: substitutes[e.key]!.name } : {}),
         }))
         .filter((e) => e.reps.length > 0);
       const res = await api.log(entries, Array.from(skipped));
@@ -147,6 +203,9 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
           onClick={() => {
             setMode("view");
             setSkipped(new Set());
+            setSubstitutes({});
+            setPickerOpen(new Set());
+            setCustomSubName({});
             load();
           }}
         >
@@ -163,15 +222,51 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
           <h2>{today.day_title}</h2>
           {today.exercises.map((e) => {
             const isSkipped = skipped.has(e.key);
+            const sub = substitutes[e.key];
+            const effectiveKind = sub?.kind ?? e.kind;
             return (
               <div className="exercise-block" key={e.key} style={{ opacity: isSkipped ? 0.4 : 1 }}>
-                <div className="ex-title">{e.name}</div>
-                <div className="ex-target">{targetText(e)}</div>
+                <div className="ex-title">
+                  {sub ? sub.name : e.name}
+                  {sub && <span className="hint"> (замена «{e.name}»)</span>}
+                </div>
+                <div className="ex-target">{sub ? subTargetText(sub) : targetText(e)}</div>
+
+                {!isSkipped && pickerOpen.has(e.key) && (
+                  <div className="card" style={{ padding: 10, margin: "8px 0" }}>
+                    <div className="hint" style={{ marginBottom: 6 }}>Заменить на:</div>
+                    {e.alternatives.length > 0 && (
+                      <div className="choice-grid">
+                        {e.alternatives.map((alt) => (
+                          <button
+                            key={alt.name}
+                            className="choice-toggle"
+                            onClick={() => pickAlternative(e, alt)}
+                          >
+                            {alt.name}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                    <div className="btn-row" style={{ marginTop: 8 }}>
+                      <input
+                        type="text"
+                        placeholder="Другое (впиши название)"
+                        value={customSubName[e.key] || ""}
+                        onChange={(ev) => setCustomSubName((prev) => ({ ...prev, [e.key]: ev.target.value }))}
+                      />
+                      <button className="btn small" onClick={() => pickCustom(e)}>
+                        Ок
+                      </button>
+                    </div>
+                  </div>
+                )}
+
                 {!isSkipped &&
                   sets[e.key]?.reps.map((val, idx) => (
-                    <div className={`set-row ${e.kind === "weight" ? "" : "no-weight"}`} key={idx}>
+                    <div className={`set-row ${effectiveKind === "weight" ? "" : "no-weight"}`} key={idx}>
                       <div className="set-idx">{idx + 1}</div>
-                      {e.kind === "weight" && (
+                      {effectiveKind === "weight" && (
                         <input
                           type="number"
                           inputMode="decimal"
@@ -183,7 +278,7 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
                       <input
                         type="number"
                         inputMode="numeric"
-                        placeholder={unitLabel(e.kind)}
+                        placeholder={unitLabel(effectiveKind)}
                         value={val}
                         onChange={(ev) => setReps(e.key, idx, ev.target.value)}
                       />
@@ -200,6 +295,12 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
                           − подход
                         </button>
                       )}
+                      <button
+                        className="btn small secondary"
+                        onClick={() => (sub ? clearSubstitute(e) : togglePicker(e.key))}
+                      >
+                        {sub ? "Отменить замену" : "Заменить"}
+                      </button>
                     </>
                   )}
                   <button className="btn small secondary" onClick={() => toggleSkip(e.key)}>

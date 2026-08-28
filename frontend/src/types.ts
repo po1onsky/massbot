@@ -1,5 +1,13 @@
 export type ExerciseKind = "weight" | "bodyweight" | "time";
 
+export interface ExerciseAlternative {
+  name: string;
+  kind: ExerciseKind;
+  sets: number;
+  reps: number;
+  step: number;
+}
+
 export interface TodayExercise {
   key: string;
   name: string;
@@ -8,6 +16,7 @@ export interface TodayExercise {
   reps: number;
   step: number;
   working_weight: number | null;
+  alternatives: ExerciseAlternative[];
 }
 
 export interface TodayPayload {
@@ -54,6 +63,14 @@ export interface MePayload {
   age: number | null;
   equipment: Equipment;
   experience: Experience;
+  split_key: string | null;
+}
+
+export interface SplitOption {
+  key: string;
+  label: string;
+  description: string;
+  days_titles: string[];
 }
 
 export interface StatsPayload {
@@ -85,6 +102,7 @@ export interface OnboardingIn {
   equipment: Equipment;
   experience: Experience;
   training_days: number[];
+  split_key: string | null;
   starting_weights: Record<string, number>;
 }
 
