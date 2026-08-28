@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { hapticNotify } from "../telegram";
+import Loading from "../components/Loading";
 import type { FoodItem, FoodLogPayload, FoodPayload, SuppPayload } from "../types";
 
 export default function FoodPage() {
@@ -129,7 +130,7 @@ export default function FoodPage() {
   }
 
   if (error) return <p className="hint">Ошибка: {error}</p>;
-  if (!food || !supp || !log) return <div className="loading">Загрузка…</div>;
+  if (!food || !supp || !log) return <Loading cards={2} />;
 
   return (
     <div className="stack">

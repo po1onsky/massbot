@@ -179,9 +179,9 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
         <div className="stack">
           <input type="number" inputMode="numeric" placeholder="Срок, недель" value={targetWeeks} onChange={(e) => setTargetWeeks(e.target.value)} />
           {preview && (
-            <p className="hint">
-              {preview.warning ? `⚠️ ${preview.warning}` : `≈${preview.rate} кг/нед — в безопасном диапазоне.`}
-            </p>
+            <div className={`notice ${preview.warning ? "warning" : "success"}`}>
+              {preview.warning ? `⚠️ ${preview.warning}` : `✅ ≈${preview.rate} кг/нед — в безопасном диапазоне.`}
+            </div>
           )}
         </div>
       ),
@@ -320,7 +320,11 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
         <div className="card">
           <h2>Программа готова 🎉</h2>
           <p className="hint">Первая тренировка: {result.dayTitle}. Калории и БЖУ уже посчитаны на вкладке «Питание».</p>
-          {result.warning && <p className="hint" style={{ marginTop: 8 }}>⚠️ {result.warning}</p>}
+          {result.warning && (
+            <div className="notice warning" style={{ marginTop: 8 }}>
+              ⚠️ {result.warning}
+            </div>
+          )}
         </div>
         <button className="btn" onClick={onDone}>
           Погнали
@@ -331,8 +335,10 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
 
   return (
     <div className="stack">
-      <div className="hint">
-        Шаг {step + 1} из {steps.length}
+      <div className="step-dots">
+        {steps.map((_, i) => (
+          <span key={i} className={`step-dot ${i === step ? "active" : i < step ? "done" : ""}`} />
+        ))}
       </div>
       <div className="card">
         <h2>{cur.title}</h2>

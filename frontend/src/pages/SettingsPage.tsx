@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { hapticNotify } from "../telegram";
+import Loading from "../components/Loading";
+import ProgressBar from "../components/ProgressBar";
 import type { Equipment, Experience, Goal, MePayload, SplitOption } from "../types";
 
 const DAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
@@ -39,7 +41,7 @@ export default function SettingsPage({ onProfileChanged }: { onProfileChanged: (
   const [goal, setGoal] = useState<Goal>("gain");
   const [targetWeight, setTargetWeight] = useState("");
   const [targetWeeks, setTargetWeeks] = useState("");
-  const [goalMsg, setGoalMsg] = useState<string | null>(null);
+  const [goalMsg, setGoalMsg] = useState<{ text: string; kind: "success" | "warning" | "error" } | null>(null);
   const [goalBusy, setGoalBusy] = useState(false);
 
   const [programOpen, setProgramOpen] = useState(false);
@@ -48,7 +50,7 @@ export default function SettingsPage({ onProfileChanged }: { onProfileChanged: (
   const [splitOptions, setSplitOptions] = useState<SplitOption[]>([]);
   const [splitKey, setSplitKey] = useState<string | null>(null);
   const [splitsLoading, setSplitsLoading] = useState(false);
-  const [programMsg, setProgramMsg] = useState<string | null>(null);
+  const [programMsg, setProgramMsg] = useState<{ text: string; kind: "success" | "warning" | "error" } | null>(null);
   const [programBusy, setProgramBusy] = useState(false);
 
   function load() {
@@ -111,12 +113,14 @@ export default function SettingsPage({ onProfileChanged }: { onProfileChanged: (
     setGoalMsg(null);
     try {
       const res = await api.setGoal(goal, tw, weeks);
-      setGoalMsg(res.warning ? `⚠️ ${res.warning}` : "Цель обновлена ✅");
+      setGoalMsg(
+        res.warning ? { text: `⚠️ ${res.warning}`, kind: "warning" } : { text: "Цель обновлена ✅", kind: "success" }
+      );
       hapticNotify("success");
       onProfileChanged();
       load();
     } catch (e) {
-      setGoalMsg((e as ApiError).message);
+      setGoalMsg({ text: (e as ApiError).message, kind: "error" });
       hapticNotify("error");
     } finally {
       setGoalBusy(false);
@@ -128,12 +132,12 @@ export default function SettingsPage({ onProfileChanged }: { onProfileChanged: (
     setProgramMsg(null);
     try {
       await api.setProgram(equipment, experience, Array.from(days), splitKey, {});
-      setProgramMsg("Программа пересобрана ✅");
+      setProgramMsg({ text: "Программа пересобрана ✅", kind: "success" });
       hapticNotify("success");
       onProfileChanged();
       load();
     } catch (e) {
-      setProgramMsg((e as ApiError).message);
+      setProgramMsg({ text: (e as ApiError).message, kind: "error" });
       hapticNotify("error");
     } finally {
       setProgramBusy(false);
@@ -141,7 +145,7 @@ export default function SettingsPage({ onProfileChanged }: { onProfileChanged: (
   }
 
   if (error) return <p className="hint">Ошибка: {error}</p>;
-  if (!me) return <div className="loading">Загрузка…</div>;
+  if (!me) return <Loading cards={2} />;
 
   return (
     <div className="stack">
@@ -164,6 +168,11 @@ export default function SettingsPage({ onProfileChanged }: { onProfileChanged: (
             {me.total_days ? ` из ${me.total_days}` : ""}
           </span>
         </div>
+        {me.total_days != null && (
+          <div style={{ padding: "8px 0" }}>
+            <ProgressBar value={(me.day_number + 1) / me.total_days} />
+          </div>
+        )}
         <div className="row">
           <span className="label">Этап</span>
           <span className="value">{me.phase_name}</span>
@@ -227,7 +236,7 @@ export default function SettingsPage({ onProfileChanged }: { onProfileChanged: (
               Калории пересчитаются от твоего последнего веса, отсчёт срока начнётся заново — история
               взвешиваний и тренировок не трогается.
             </p>
-            {goalMsg && <p className="hint">{goalMsg}</p>}
+            {goalMsg && <div className={`notice ${goalMsg.kind}`}>{goalMsg.text}</div>}
             <button className="btn" disabled={goalBusy} onClick={saveGoal}>
               {goalBusy ? "Считаю…" : "Пересчитать"}
             </button>
@@ -284,7 +293,7 @@ export default function SettingsPage({ onProfileChanged }: { onProfileChanged: (
               Сплит пересоберётся под выбранные дни тренировок (вкладка выше) и оборудование. Прогресс в
               упражнениях, которые останутся в программе, сохранится.
             </p>
-            {programMsg && <p className="hint">{programMsg}</p>}
+            {programMsg && <div className={`notice ${programMsg.kind}`}>{programMsg.text}</div>}
             <button className="btn" disabled={programBusy} onClick={saveProgram}>
               {programBusy ? "Собираю…" : "Пересобрать программу"}
             </button>

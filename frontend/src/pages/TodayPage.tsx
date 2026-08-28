@@ -1,6 +1,9 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { haptic, hapticNotify } from "../telegram";
+import Loading from "../components/Loading";
+import Stepper from "../components/Stepper";
+import { exerciseIcon } from "../exerciseIcons";
 import type { ExerciseKind, LogNote, TodayExercise, TodayPayload } from "../types";
 
 type SetsState = Record<string, { weight: string; reps: string[] }>;
@@ -22,6 +25,12 @@ function subTargetText(s: Substitute): string {
 
 function unitLabel(kind: TodayExercise["kind"]): string {
   return kind === "time" ? "сек" : "повт.";
+}
+
+function noteVariant(note: string): "success" | "warning" | "neutral" {
+  if (note.startsWith("✅")) return "success";
+  if (note.startsWith("↩️") || note.startsWith("⏸")) return "warning";
+  return "neutral";
 }
 
 function buildInitialSets(exercises: TodayExercise[]): SetsState {
@@ -63,7 +72,7 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
   useEffect(load, []);
 
   if (error) return <p className="hint">Ошибка: {error}</p>;
-  if (!today) return <div className="loading">Загрузка…</div>;
+  if (!today) return <Loading cards={2} />;
 
   function setReps(key: string, idx: number, value: string) {
     setSets((prev) => {
@@ -192,8 +201,11 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
         <div className="card">
           <h2>Тренировка записана</h2>
           {notes.map((n) => (
-            <div key={n.key} className="log-note">
-              <div className="name">{n.name}</div>
+            <div key={n.key} className={`log-note ${noteVariant(n.note)}`}>
+              <div className="name">
+                <span className="ex-icon">{exerciseIcon(n.key)}</span>
+                {n.name}
+              </div>
               <div className="hint">{n.note}</div>
             </div>
           ))}
@@ -227,6 +239,7 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
             return (
               <div className="exercise-block" key={e.key} style={{ opacity: isSkipped ? 0.4 : 1 }}>
                 <div className="ex-title">
+                  <span className="ex-icon">{exerciseIcon(e.key)}</span>
                   {sub ? sub.name : e.name}
                   {sub && <span className="hint"> (замена «{e.name}»)</span>}
                 </div>
@@ -275,12 +288,10 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
                           onChange={(ev) => setWeight(e.key, ev.target.value)}
                         />
                       )}
-                      <input
-                        type="number"
-                        inputMode="numeric"
-                        placeholder={unitLabel(effectiveKind)}
+                      <Stepper
                         value={val}
-                        onChange={(ev) => setReps(e.key, idx, ev.target.value)}
+                        onChange={(v) => setReps(e.key, idx, v)}
+                        placeholder={unitLabel(effectiveKind)}
                       />
                     </div>
                   ))}
@@ -339,7 +350,10 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
         <div style={{ marginTop: 10 }}>
           {today.exercises.map((e) => (
             <div className="row" key={e.key}>
-              <span className="label">{e.name}</span>
+              <span className="label">
+                <span className="ex-icon">{exerciseIcon(e.key)}</span>
+                {e.name}
+              </span>
               <span className="value">{targetText(e)}</span>
             </div>
           ))}

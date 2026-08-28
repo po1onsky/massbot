@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "./api";
 import NavBar, { type Tab } from "./components/NavBar";
+import ProgressBar from "./components/ProgressBar";
+import Loading from "./components/Loading";
 import TodayPage from "./pages/TodayPage";
 import StatsPage from "./pages/StatsPage";
 import PlanPage from "./pages/PlanPage";
@@ -28,12 +30,19 @@ export default function App() {
           {me?.first_name ? `Привет, ${me.first_name} 👋` : "Тренировки"}
         </h1>
         {me?.onboarded && (
-          <div className="sub">
-            {me.phase_name} · день {me.day_number + 1} · {me.start_weight} → {me.goal_weight} кг
-          </div>
+          <>
+            <div className="sub">
+              {me.phase_name} · день {me.day_number + 1} · {me.start_weight} → {me.goal_weight} кг
+            </div>
+            {me.total_days != null && (
+              <div style={{ marginTop: 6 }}>
+                <ProgressBar value={(me.day_number + 1) / me.total_days} />
+              </div>
+            )}
+          </>
         )}
         {!isInsideTelegram() && (
-          <div className="sub" style={{ color: "#ff9500", marginTop: 4 }}>
+          <div className="sub" style={{ color: "var(--accent-warning)", marginTop: 4 }}>
             ⚠️ Открыто вне Telegram — работает тестовый режим
           </div>
         )}
@@ -41,7 +50,7 @@ export default function App() {
 
       <main className="app-content">
         {error && <p className="hint">Ошибка: {error}</p>}
-        {!me && !error && <div className="loading">Загрузка…</div>}
+        {!me && !error && <Loading lines={2} />}
         {me && !me.onboarded && <Onboarding onDone={refreshMe} />}
         {me?.onboarded && tab === "today" && <TodayPage onLogged={refreshMe} />}
         {me?.onboarded && tab === "stats" && <StatsPage />}

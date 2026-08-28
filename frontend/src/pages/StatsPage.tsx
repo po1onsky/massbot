@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import WeightChart from "../components/WeightChart";
+import Loading from "../components/Loading";
+import ProgressBar from "../components/ProgressBar";
 import type { PlotPayload, StatsPayload } from "../types";
 
 export default function StatsPage() {
@@ -18,7 +20,7 @@ export default function StatsPage() {
   }, []);
 
   if (error) return <p className="hint">Ошибка: {error}</p>;
-  if (!stats) return <div className="loading">Загрузка…</div>;
+  if (!stats) return <Loading cards={2} />;
 
   if (!stats.has_data) {
     return (
@@ -54,6 +56,14 @@ export default function StatsPage() {
           <span className="label">До цели</span>
           <span className="value">{stats.to_goal! > 0 ? "+" : ""}{stats.to_goal} кг</span>
         </div>
+        {stats.since_start! + stats.to_goal! !== 0 && (
+          <div style={{ padding: "8px 0" }}>
+            <ProgressBar
+              value={stats.since_start! / (stats.since_start! + stats.to_goal!)}
+              color="var(--accent-success)"
+            />
+          </div>
+        )}
         <div className="row">
           <span className="label">План на сегодня</span>
           <span className="value">

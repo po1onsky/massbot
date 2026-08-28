@@ -8,6 +8,17 @@
   --tg-secondary-bg: #f2f2f7;
   --tg-section-separator: #e5e5ea;
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* Семантические акценты — единые для success/warning/danger по всему
+     приложению (раньше были локальные inline-цвета в разных местах). */
+  --accent-success: #34c759;
+  --accent-success-bg: rgba(52, 199, 89, 0.14);
+  --accent-warning: #ff9500;
+  --accent-warning-bg: rgba(255, 149, 0, 0.14);
+  --accent-danger: #ff3b30;
+  --accent-danger-bg: rgba(255, 59, 48, 0.14);
+  --accent-info: var(--tg-link);
+  --accent-info-bg: rgba(36, 129, 204, 0.14);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -127,7 +138,7 @@ body {
 }
 
 .badge.warn {
-  background: #ff9500;
+  background: var(--accent-warning);
 }
 
 .btn {
@@ -193,14 +204,17 @@ input[type="number"] {
 
 .set-row {
   display: grid;
-  grid-template-columns: 28px 1fr 1fr;
+  /* последняя колонка (степпер повторов) — под содержимое, а не 1fr: он
+     компактный (кнопки+поле ~110px), растягивать его на всю ширину смысла
+     нет — только вес слева должен гибко занимать оставшееся место. */
+  grid-template-columns: 28px 1fr auto;
   gap: 8px;
   align-items: center;
   margin-bottom: 6px;
 }
 
 .set-row.no-weight {
-  grid-template-columns: 28px 1fr;
+  grid-template-columns: 28px auto;
 }
 
 .set-row .set-idx {
@@ -216,13 +230,22 @@ input[type="number"] {
 }
 
 .log-note {
-  padding: 8px 0;
+  padding: 8px 0 8px 10px;
   border-bottom: 1px solid var(--tg-section-separator);
+  border-left: 3px solid transparent;
   font-size: 14px;
 }
 
 .log-note:last-child {
   border-bottom: none;
+}
+
+.log-note.success {
+  border-left-color: var(--accent-success);
+}
+
+.log-note.warning {
+  border-left-color: var(--accent-warning);
 }
 
 .log-note .name {
@@ -342,4 +365,176 @@ input[type="number"] {
   font-size: 14px;
   text-align: center;
   z-index: 50;
+}
+
+/* ------------------------------------------------------------------ badge-варианты (success/danger вдобавок к existing .badge/.badge.warn) */
+.badge.success {
+  background: var(--accent-success);
+}
+
+.badge.danger {
+  background: var(--accent-danger);
+}
+
+/* ------------------------------------------------------------------ цветные плашки-уведомления (warning/success/info) */
+.notice {
+  border-radius: 10px;
+  padding: 10px 12px;
+  font-size: 13px;
+  line-height: 1.4;
+  color: var(--tg-text);
+}
+
+.notice.warning {
+  background: var(--accent-warning-bg);
+}
+
+.notice.success {
+  background: var(--accent-success-bg);
+}
+
+.notice.error {
+  background: var(--accent-danger-bg);
+}
+
+.notice.info {
+  background: var(--accent-info-bg);
+}
+
+/* ------------------------------------------------------------------ progress bar */
+.progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: var(--tg-section-separator);
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: var(--tg-button);
+  transition: width 0.35s ease;
+}
+
+.progress-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.progress-row .label {
+  color: var(--tg-hint);
+}
+
+.progress-row .value {
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ skeleton-загрузка */
+.skeleton-line {
+  height: 13px;
+  border-radius: 6px;
+  background: linear-gradient(90deg, var(--tg-section-separator) 25%, var(--tg-secondary-bg) 50%, var(--tg-section-separator) 75%);
+  background-size: 200% 100%;
+  animation: skeleton-shimmer 1.3s ease-in-out infinite;
+  margin-bottom: 10px;
+}
+
+.skeleton-line:last-child {
+  margin-bottom: 0;
+}
+
+@keyframes skeleton-shimmer {
+  0% {
+    background-position: 200% 0;
+  }
+  100% {
+    background-position: -200% 0;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-line {
+    animation: none;
+  }
+}
+
+/* ------------------------------------------------------------------ степпер повторов */
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.stepper-btn {
+  width: 30px;
+  height: 30px;
+  flex: none;
+  border-radius: 8px;
+  border: 1px solid var(--tg-section-separator);
+  background: var(--tg-bg);
+  color: var(--tg-text);
+  font-size: 17px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+}
+
+.stepper-btn:active {
+  background: var(--tg-secondary-bg);
+}
+
+.stepper-input {
+  /* !important — иначе глобальное input[type="number"] { width:100% } (выше
+     по специфичности за счёт атрибутного селектора) растягивает поле на всю
+     ширину степпера и выталкивает кнопку "+" за пределы экрана. */
+  width: 40px !important;
+  text-align: center;
+  padding: 6px 2px !important;
+  flex: none;
+}
+
+/* ------------------------------------------------------------------ иконка упражнения */
+.ex-icon {
+  display: inline-block;
+  margin-right: 6px;
+}
+
+/* ------------------------------------------------------------------ точки-прогресс в онбординге */
+.step-dots {
+  display: flex;
+  gap: 6px;
+  justify-content: center;
+}
+
+.step-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 4px;
+  background: var(--tg-section-separator);
+  transition: all 0.2s ease;
+}
+
+.step-dot.active {
+  width: 20px;
+  background: var(--tg-button);
+}
+
+.step-dot.done {
+  background: var(--accent-success);
+}
+
+/* ------------------------------------------------------------------ график: тултип по тапу */
+.chart-tooltip-bg {
+  fill: var(--tg-text);
+  opacity: 0.92;
+}
+
+.chart-tooltip-text {
+  fill: var(--tg-bg);
 }
