@@ -3,7 +3,7 @@ import { api, ApiError } from "../api";
 import { haptic, hapticNotify } from "../telegram";
 import Loading from "../components/Loading";
 import Stepper from "../components/Stepper";
-import type { EquipTier, ExerciseKind, LogNote, MePayload, TodayExercise, TodayPayload } from "../types";
+import type { EquipTier, ExerciseKind, LogNote, MePayload, TodayExercise, TodayPayload, WeekPlanDay } from "../types";
 
 type SetsState = Record<string, { weights: string[]; reps: string[] }>;
 type Substitute = { name: string; kind: ExerciseKind; sets: number; reps: number; equip_tier?: EquipTier };
@@ -58,6 +58,13 @@ function nextTrainingLabel(trainingDays: Set<number>, todayWeekday: number): str
   return null;
 }
 
+const RU_WEEKDAY = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+
+function formatDayHeading(d: WeekPlanDay): string {
+  const [, m, dd] = d.date.split("-");
+  return `${RU_WEEKDAY[d.weekday]}, ${parseInt(dd, 10)}.${m}`;
+}
+
 function noteVariant(note: string): "success" | "warning" | "neutral" {
   if (note.startsWith("✅")) return "success";
   if (note.startsWith("↩️") || note.startsWith("⏸")) return "warning";
@@ -76,7 +83,17 @@ function buildInitialSets(exercises: TodayExercise[]): SetsState {
   return state;
 }
 
-export default function TodayPage({ me, onLogged }: { me: MePayload; onLogged: () => void }) {
+export default function TodayPage({
+  me,
+  onLogged,
+  pickedDay,
+  onClosePickedDay,
+}: {
+  me: MePayload;
+  onLogged: () => void;
+  pickedDay?: string | null;
+  onClosePickedDay?: () => void;
+}) {
   const [today, setToday] = useState<TodayPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<"view" | "log" | "result">("view");
@@ -90,6 +107,7 @@ export default function TodayPage({ me, onLogged }: { me: MePayload; onLogged: (
   const [weightInput, setWeightInput] = useState("");
   const [weightMsg, setWeightMsg] = useState<string | null>(null);
   const [forceWorkout, setForceWorkout] = useState(false);
+  const [weekPlan, setWeekPlan] = useState<WeekPlanDay[]>([]);
 
   function load() {
     setError(null);
@@ -103,6 +121,9 @@ export default function TodayPage({ me, onLogged }: { me: MePayload; onLogged: (
   }
 
   useEffect(load, []);
+  useEffect(() => {
+    api.weekPlan().then(setWeekPlan).catch(() => setWeekPlan([]));
+  }, []);
 
   if (error) return <p className="hint">Ошибка: {error}</p>;
   if (!today) return <Loading cards={2} />;
@@ -111,6 +132,31 @@ export default function TodayPage({ me, onLogged }: { me: MePayload; onLogged: (
   const isTrainingDay = todayEntry?.is_training ?? true;
   const trainingSet = new Set((me.training_days || "").split(",").filter(Boolean).map(Number));
   const isRestDay = !isTrainingDay && !today.logged_today && !forceWorkout;
+
+  const pickedEntry = pickedDay ? weekPlan.find((d) => d.date === pickedDay) : undefined;
+  const dayPreview = pickedEntry && (
+    <div className="card day-preview">
+      <div className="btn-row" style={{ alignItems: "center", marginBottom: 6 }}>
+        <h3 style={{ margin: 0, flex: 1 }}>{formatDayHeading(pickedEntry)}</h3>
+        <button className="tag-outline close" onClick={onClosePickedDay}>
+          ×
+        </button>
+      </div>
+      {pickedEntry.status === "rest" && <p className="hint">День отдыха по плану.</p>}
+      {pickedEntry.status === "missed" && <p className="hint">Была запланирована тренировка, но не отмечена.</p>}
+      {(pickedEntry.status === "done" || pickedEntry.status === "planned") && (
+        <>
+          <div className="btn-row" style={{ alignItems: "center", marginBottom: 4 }}>
+            <div style={{ fontWeight: 600, fontSize: 14 }}>{pickedEntry.day_title}</div>
+            <span className={`badge ${pickedEntry.status === "done" ? "success" : ""}`}>
+              {pickedEntry.status === "done" ? "проведено" : "план"}
+            </span>
+          </div>
+          <p className="hint">{(pickedEntry.exercises || []).join(", ")}</p>
+        </>
+      )}
+    </div>
+  );
 
   function setReps(key: string, idx: number, value: string) {
     setSets((prev) => {
@@ -447,6 +493,7 @@ export default function TodayPage({ me, onLogged }: { me: MePayload; onLogged: (
     const nextLabel = nextTrainingLabel(trainingSet, todayEntry?.weekday ?? 0);
     return (
       <div className="stack">
+        {dayPreview}
         <div className="card">
           <h2>День отдыха</h2>
           <p className="hint">
@@ -464,6 +511,7 @@ export default function TodayPage({ me, onLogged }: { me: MePayload; onLogged: (
 
   return (
     <div className="stack">
+      {dayPreview}
       <div className="card">
         <h2>{today.day_title}</h2>
         <div className="hint" style={{ marginBottom: 8 }}>

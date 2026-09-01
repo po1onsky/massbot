@@ -18,6 +18,7 @@ import type {
   StatsPayload,
   SuppPayload,
   TodayPayload,
+  WeekPlanDay,
 } from "./types";
 
 class ApiError extends Error {}
@@ -70,6 +71,7 @@ export const api = {
   setSuppItem: (key: string, taken: boolean) =>
     request<SuppPayload>("/supp/item", { method: "POST", body: JSON.stringify({ key, taken }) }),
   plan: () => request<PlanPayload>("/plan"),
+  weekPlan: () => request<WeekPlanDay[]>("/week-plan"),
   days: (days: number[]) =>
     request<{ training_days: string }>("/days", {
       method: "POST",

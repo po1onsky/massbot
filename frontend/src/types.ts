@@ -38,6 +38,18 @@ export interface WeekDay {
   done: boolean;
 }
 
+export type WeekPlanStatus = "rest" | "missed" | "done" | "planned";
+
+export interface WeekPlanDay {
+  date: string;
+  weekday: number;
+  is_today: boolean;
+  is_training: boolean;
+  status: WeekPlanStatus;
+  day_title?: string;
+  exercises?: string[];
+}
+
 export interface TodayPayload {
   day_title: string;
   day_code: string;

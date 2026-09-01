@@ -688,6 +688,55 @@ def week_days(u) -> list:
     ]
 
 
+def week_plan_days(u) -> list:
+    """Что запланировано/было в каждый день текущей недели — по клику на
+    кубик недели в шапке. Прошлые тренировочные дни — по факту (нашлась
+    сессия в этот день → что реально делали; не нашлась → "пропущено").
+    Сегодня и будущие тренировочные дни — прогноз по ротации: как если бы
+    тренировались в каждый оставшийся тренировочный день этой недели подряд,
+    без пропусков (реальный порядок next_day_plan() подтвердит/поправит по
+    факту, это just превью)."""
+    chat_id = u["chat_id"]
+    training = {int(d) for d in (u["training_days"] or "").split(",") if d != ""}
+    today = today_date()
+    monday = today - dt.timedelta(days=today.weekday())
+    week = [monday + dt.timedelta(days=i) for i in range(7)]
+
+    idx = current_phase_idx(u)
+    days = get_program_days_for_block(u, current_block_index(u)) if is_new_style(u) else get_program_days(u)
+    total_sessions = db.execute(
+        "SELECT COUNT(*) c FROM sessions WHERE chat_id=? AND phase=?", (chat_id, idx)
+    ).fetchone()["c"]
+    rows = db.execute(
+        "SELECT date, day_code FROM sessions WHERE chat_id=? AND date BETWEEN ? AND ?",
+        (chat_id, week[0].isoformat(), week[-1].isoformat()),
+    ).fetchall()
+    logged_by_date = {r["date"]: r["day_code"] for r in rows}
+
+    result = []
+    planned_offset = 0
+    for i, d in enumerate(week):
+        date_iso = d.isoformat()
+        entry = {"date": date_iso, "weekday": i, "is_today": d == today, "is_training": i in training}
+        if i not in training:
+            entry["status"] = "rest"
+        elif date_iso in logged_by_date:
+            day = next((x for x in days if x["code"] == logged_by_date[date_iso]), None)
+            entry["status"] = "done"
+            entry["day_title"] = day["title"] if day else logged_by_date[date_iso]
+            entry["exercises"] = [e["name"] for e in day["exercises"]] if day else []
+        elif d < today:
+            entry["status"] = "missed"
+        else:
+            planned_offset += 1
+            day = days[(total_sessions + planned_offset - 1) % len(days)]
+            entry["status"] = "planned"
+            entry["day_title"] = day["title"]
+            entry["exercises"] = [e["name"] for e in day["exercises"]]
+        result.append(entry)
+    return result
+
+
 def me_payload(u) -> dict:
     return {
         "week": week_days(u),

@@ -16,6 +16,9 @@ export default function App() {
   const [tab, setTab] = useState<Tab>("today");
   const [me, setMe] = useState<MePayload | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Выбранный клик по кубику недели — кликабельно только на вкладке
+  // "Сегодня" (там же и отрисовывается превью плана на этот день).
+  const [pickedDay, setPickedDay] = useState<string | null>(null);
 
   function refreshMe() {
     api.me().then(setMe).catch((e: ApiError) => setError(e.message));
@@ -34,7 +37,11 @@ export default function App() {
             <div className="sub">
               {me.phase_name} · {me.start_weight} → {me.goal_weight} кг
             </div>
-            <WeekStrip week={me.week} />
+            <WeekStrip
+              week={me.week}
+              selected={tab === "today" ? pickedDay : null}
+              onDayClick={tab === "today" ? (date) => setPickedDay((d) => (d === date ? null : date)) : undefined}
+            />
           </>
         )}
         {!isInsideTelegram() && (
@@ -48,7 +55,9 @@ export default function App() {
         {error && <p className="hint">Ошибка: {error}</p>}
         {!me && !error && <Loading lines={2} />}
         {me && !me.onboarded && <Onboarding onDone={refreshMe} />}
-        {me?.onboarded && tab === "today" && <TodayPage me={me} onLogged={refreshMe} />}
+        {me?.onboarded && tab === "today" && (
+          <TodayPage me={me} onLogged={refreshMe} pickedDay={pickedDay} onClosePickedDay={() => setPickedDay(null)} />
+        )}
         {me?.onboarded && tab === "stats" && <StatsPage />}
         {me?.onboarded && tab === "plan" && <PlanPage />}
         {me?.onboarded && tab === "food" && <FoodPage />}

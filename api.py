@@ -196,6 +196,11 @@ def get_plan(auth: AuthUser = Depends(get_current_user)):
     return core.plan_payload(_user(auth))
 
 
+@api.get("/week-plan")
+def get_week_plan(auth: AuthUser = Depends(get_current_user)):
+    return core.week_plan_days(_user(auth))
+
+
 class DaysIn(BaseModel):
     days: list[int]
 
