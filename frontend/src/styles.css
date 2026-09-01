@@ -1,13 +1,21 @@
 :root {
-  --tg-bg: #ffffff;
-  --tg-text: #1c1c1e;
-  --tg-hint: #8e8e93;
-  --tg-link: #2481cc;
-  --tg-button: #2481cc;
+  --tg-bg: #f7f7fb;
+  --tg-text: #14141a;
+  --tg-hint: #78788a;
+  --tg-link: #5b5bf0;
+  --tg-button: #5b5bf0;
   --tg-button-text: #ffffff;
-  --tg-secondary-bg: #f2f2f7;
-  --tg-section-separator: #e5e5ea;
+  --tg-secondary-bg: #ffffff;
+  --tg-section-separator: rgba(20, 20, 26, 0.09);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
+
+  /* Премиальный градиентный акцент — на кнопках, бейджах, прогрессе,
+     выбранных состояниях. Один и тот же градиент везде — единый фирменный
+     штрих вместо плоской заливки. */
+  --accent-gradient: linear-gradient(135deg, #6a5bf6, #a855f7);
+  --accent-glow: 0 6px 20px rgba(107, 91, 246, 0.28);
+  --shadow-card: 0 1px 2px rgba(20, 20, 26, 0.04), 0 8px 24px rgba(20, 20, 26, 0.06);
+  --bg-wash: radial-gradient(ellipse 120% 60% at 50% -10%, rgba(107, 91, 246, 0.08), transparent 60%);
 
   /* Семантические акценты — единые для success/warning/danger по всему
      приложению (раньше были локальные inline-цвета в разных местах). */
@@ -18,19 +26,26 @@
   --accent-danger: #ff3b30;
   --accent-danger-bg: rgba(255, 59, 48, 0.14);
   --accent-info: var(--tg-link);
-  --accent-info-bg: rgba(36, 129, 204, 0.14);
+  --accent-info-bg: rgba(91, 91, 240, 0.12);
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --tg-bg: #1c1c1e;
-    --tg-text: #ffffff;
-    --tg-hint: #8e8e93;
-    --tg-link: #6ab7ff;
-    --tg-button: #2481cc;
+    --tg-bg: #0a0a10;
+    --tg-text: #f5f5f7;
+    --tg-hint: #8c8d9a;
+    --tg-link: #9c8bff;
+    --tg-button: #7c6bfb;
     --tg-button-text: #ffffff;
-    --tg-secondary-bg: #2c2c2e;
-    --tg-section-separator: #38383a;
+    --tg-secondary-bg: #17171f;
+    --tg-section-separator: rgba(255, 255, 255, 0.08);
+
+    --accent-gradient: linear-gradient(135deg, #7c6bfb, #c084fc);
+    --accent-glow: 0 8px 28px rgba(124, 107, 251, 0.35);
+    --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 10px 30px rgba(0, 0, 0, 0.45);
+    --bg-wash: radial-gradient(ellipse 120% 50% at 50% -10%, rgba(124, 107, 251, 0.16), transparent 60%);
+
+    --accent-info-bg: rgba(156, 139, 255, 0.16);
   }
 }
 
@@ -46,10 +61,12 @@ body,
 
 body {
   margin: 0;
-  background: var(--tg-bg);
+  background: var(--bg-wash), var(--tg-bg);
+  background-attachment: fixed;
   color: var(--tg-text);
   font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   -webkit-tap-highlight-color: transparent;
+  letter-spacing: -0.01em;
 }
 
 .app {
@@ -59,14 +76,15 @@ body {
 }
 
 .app-header {
-  padding: 14px 16px 10px;
+  padding: 16px 16px 12px;
   border-bottom: 1px solid var(--tg-section-separator);
 }
 
 .app-header h1 {
   margin: 0;
-  font-size: 19px;
-  font-weight: 700;
+  font-size: 20px;
+  font-weight: 800;
+  letter-spacing: -0.02em;
 }
 
 .app-header .sub {
@@ -83,21 +101,24 @@ body {
 
 .card {
   background: var(--tg-secondary-bg);
-  border-radius: 14px;
-  padding: 14px;
+  border: 1px solid var(--tg-section-separator);
+  border-radius: 18px;
+  padding: 16px;
   margin-bottom: 12px;
+  box-shadow: var(--shadow-card);
 }
 
 .card h2 {
   margin: 0 0 8px;
-  font-size: 16px;
-  font-weight: 700;
+  font-size: 17px;
+  font-weight: 800;
+  letter-spacing: -0.01em;
 }
 
 .card h3 {
   margin: 0 0 6px;
   font-size: 14px;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .row {
@@ -129,12 +150,13 @@ body {
 
 .badge {
   display: inline-block;
-  background: var(--tg-button);
+  background: var(--accent-gradient);
+  box-shadow: var(--accent-glow);
   color: var(--tg-button-text);
   border-radius: 8px;
   padding: 2px 8px;
   font-size: 12px;
-  font-weight: 600;
+  font-weight: 700;
 }
 
 .badge.warn {
@@ -144,31 +166,46 @@ body {
 .btn {
   appearance: none;
   border: none;
-  border-radius: 12px;
-  background: var(--tg-button);
+  border-radius: 14px;
+  background: var(--accent-gradient);
+  box-shadow: var(--accent-glow);
   color: var(--tg-button-text);
   font-size: 15px;
-  font-weight: 600;
-  padding: 12px 16px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  padding: 13px 16px;
   width: 100%;
   cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.btn:active {
+  transform: scale(0.97);
+  box-shadow: 0 4px 14px rgba(107, 91, 246, 0.24);
 }
 
 .btn:disabled {
   opacity: 0.5;
+  box-shadow: none;
 }
 
 .btn.secondary {
-  background: transparent;
-  color: var(--tg-link);
+  background: var(--tg-secondary-bg);
+  color: var(--tg-text);
   border: 1px solid var(--tg-section-separator);
+  box-shadow: none;
+}
+
+.btn.secondary:active {
+  box-shadow: none;
+  background: var(--tg-section-separator);
 }
 
 .btn.small {
   width: auto;
-  padding: 8px 12px;
+  padding: 9px 13px;
   font-size: 13px;
-  border-radius: 10px;
+  border-radius: 11px;
 }
 
 .btn-row {
@@ -180,11 +217,19 @@ input[type="text"],
 input[type="number"] {
   background: var(--tg-bg);
   border: 1px solid var(--tg-section-separator);
-  border-radius: 10px;
+  border-radius: 11px;
   color: var(--tg-text);
   font-size: 15px;
-  padding: 8px 10px;
+  padding: 9px 11px;
   width: 100%;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+input[type="text"]:focus,
+input[type="number"]:focus {
+  outline: none;
+  border-color: var(--tg-button);
+  box-shadow: 0 0 0 3px rgba(107, 91, 246, 0.16);
 }
 
 .exercise-block {
@@ -259,6 +304,9 @@ input[type="number"] {
   right: 0;
   display: flex;
   background: var(--tg-bg);
+  background: color-mix(in srgb, var(--tg-bg) 82%, transparent);
+  backdrop-filter: blur(20px) saturate(1.4);
+  -webkit-backdrop-filter: blur(20px) saturate(1.4);
   border-top: 1px solid var(--tg-section-separator);
   padding-bottom: var(--safe-bottom);
 }
@@ -269,20 +317,28 @@ input[type="number"] {
   border: none;
   color: var(--tg-hint);
   font-size: 11px;
+  font-weight: 600;
   padding: 8px 0 10px;
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 2px;
   cursor: pointer;
+  transition: color 0.15s ease, transform 0.15s ease;
 }
 
 .navbar button .icon {
   font-size: 20px;
+  transition: transform 0.15s ease, filter 0.15s ease;
 }
 
 .navbar button.active {
   color: var(--tg-link);
+}
+
+.navbar button.active .icon {
+  transform: translateY(-1px) scale(1.08);
+  filter: drop-shadow(0 2px 8px rgba(107, 91, 246, 0.45));
 }
 
 .chart-wrap {
@@ -326,9 +382,10 @@ input[type="number"] {
 }
 
 .day-toggle.selected {
-  background: var(--tg-button);
+  background: var(--accent-gradient);
+  box-shadow: var(--accent-glow);
   color: var(--tg-button-text);
-  border-color: var(--tg-button);
+  border-color: transparent;
 }
 
 .choice-grid {
@@ -338,19 +395,25 @@ input[type="number"] {
 }
 
 .choice-toggle {
-  border-radius: 10px;
+  border-radius: 12px;
   border: 1px solid var(--tg-section-separator);
   background: var(--tg-bg);
   color: var(--tg-text);
   padding: 10px 14px;
   font-size: 14px;
   cursor: pointer;
+  transition: transform 0.15s ease, box-shadow 0.15s ease;
+}
+
+.choice-toggle:active {
+  transform: scale(0.97);
 }
 
 .choice-toggle.selected {
-  background: var(--tg-button);
+  background: var(--accent-gradient);
+  box-shadow: var(--accent-glow);
   color: var(--tg-button-text);
-  border-color: var(--tg-button);
+  border-color: transparent;
 }
 
 .choice-toggle.small {
@@ -417,7 +480,8 @@ input[type="number"] {
 .progress-fill {
   height: 100%;
   border-radius: 999px;
-  background: var(--tg-button);
+  background: var(--accent-gradient);
+  box-shadow: var(--accent-glow);
   transition: width 0.35s ease;
 }
 
@@ -527,11 +591,114 @@ input[type="number"] {
 
 .step-dot.active {
   width: 20px;
-  background: var(--tg-button);
+  background: var(--accent-gradient);
+  box-shadow: var(--accent-glow);
 }
 
 .step-dot.done {
   background: var(--accent-success);
+}
+
+/* ------------------------------------------------------------------ стопка карточек со свайпом (вкладка "План") */
+.card-stack {
+  position: relative;
+  touch-action: pan-y;
+  margin-bottom: 12px;
+}
+
+.card-stack-item {
+  width: 100%;
+}
+
+.card-stack-item .card {
+  margin-bottom: 0;
+  min-height: 100%;
+}
+
+.card-stack-item.peek {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  transform-origin: 50% 0%;
+  overflow: hidden;
+}
+
+.card-stack-item.front {
+  position: relative;
+  z-index: 100;
+  cursor: grab;
+  user-select: none;
+  -webkit-user-select: none;
+  transition: transform 0.28s cubic-bezier(0.22, 0.9, 0.32, 1), opacity 0.28s ease;
+}
+
+.card-stack-item.front.dragging {
+  transition: none;
+  cursor: grabbing;
+}
+
+.card-stack-item.front.leaving {
+  transition: transform 0.22s ease, opacity 0.22s ease;
+  opacity: 0;
+}
+
+.card-stack-nav {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  margin-top: 2px;
+}
+
+.card-stack-arrow {
+  appearance: none;
+  border: 1px solid var(--tg-section-separator);
+  background: var(--tg-secondary-bg);
+  color: var(--tg-text);
+  width: 34px;
+  height: 34px;
+  border-radius: 999px;
+  font-size: 15px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  box-shadow: var(--shadow-card);
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.card-stack-arrow:active {
+  transform: scale(0.92);
+}
+
+.card-stack-arrow:disabled {
+  opacity: 0.3;
+  cursor: default;
+}
+
+.card-stack-dots {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  justify-content: center;
+  max-width: 160px;
+}
+
+.card-stack-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 999px;
+  border: none;
+  padding: 0;
+  background: var(--tg-section-separator);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.card-stack-dot.active {
+  width: 16px;
+  background: var(--accent-gradient);
 }
 
 /* ------------------------------------------------------------------ график: тултип по тапу */

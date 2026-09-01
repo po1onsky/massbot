@@ -561,7 +561,9 @@ SPLIT_TEMPLATES = {
                 {
                     "code": "Pl", "title": "Pull (тяга)",
                     "patterns": ["pull_h", "pull_v", "biceps", "core"],
-                    "patterns_medium": ["arms"],
+                    # без "arms" — это тот же бицепс другим именем, только с
+                    # biceps/triceps в одном дне это буквально задвоит упражнение.
+                    "patterns_medium": [],
                     "patterns_long": [],
                 },
                 {
@@ -587,7 +589,8 @@ SPLIT_TEMPLATES = {
                     "code": "BB", "title": "Спина + бицепс",
                     "patterns": ["pull_h", "pull_v", "biceps"],
                     "patterns_medium": ["core"],
-                    "patterns_long": ["arms"],
+                    # без "arms" на long — дублирует biceps тем же именем упражнения.
+                    "patterns_long": [],
                 },
                 {
                     "code": "LS", "title": "Ноги + плечи",
@@ -607,8 +610,10 @@ SPLIT_TEMPLATES = {
                 {
                     "code": "U1", "title": "Верх A",
                     "patterns": ["push_h", "pull_h", "push_v", "arms", "core"],
-                    "patterns_medium": ["triceps", "chest_acc"],
-                    "patterns_long": ["biceps", "shoulder_acc"],
+                    # без triceps/biceps — "arms" в базе уже занимает эту нишу тем
+                    # же вариантом упражнения (дублировало бы имя).
+                    "patterns_medium": ["chest_acc", "shoulder_acc"],
+                    "patterns_long": [],
                 },
                 {
                     "code": "L1", "title": "Низ A",
@@ -619,8 +624,8 @@ SPLIT_TEMPLATES = {
                 {
                     "code": "U2", "title": "Верх B",
                     "patterns": ["push_v", "pull_v", "push_h", "arms", "core"],
-                    "patterns_medium": ["chest_acc", "biceps"],
-                    "patterns_long": ["triceps", "shoulder_acc"],
+                    "patterns_medium": ["chest_acc", "shoulder_acc"],
+                    "patterns_long": [],
                 },
                 {
                     "code": "L2", "title": "Низ B",
@@ -645,7 +650,7 @@ SPLIT_TEMPLATES = {
                     "code": "B", "title": "Спина",
                     "patterns": ["pull_h", "pull_v", "biceps"],
                     "patterns_medium": ["core"],
-                    "patterns_long": ["arms"],
+                    "patterns_long": [],
                 },
                 {
                     "code": "L", "title": "Ноги",
@@ -672,13 +677,15 @@ SPLIT_TEMPLATES = {
                     "code": "P", "title": "Push (жимовая)",
                     "patterns": ["push_h", "push_v", "arms", "core"],
                     "patterns_medium": ["chest_acc"],
-                    "patterns_long": ["triceps"],
+                    # без triceps — "arms" в базе уже занимает эту нишу.
+                    "patterns_long": ["shoulder_acc"],
                 },
                 {
                     "code": "Pl", "title": "Pull (тяговая)",
                     "patterns": ["pull_h", "pull_v", "arms"],
-                    "patterns_medium": ["biceps"],
-                    "patterns_long": ["core"],
+                    # без biceps — "arms" в базе уже занимает эту нишу.
+                    "patterns_medium": ["core"],
+                    "patterns_long": [],
                 },
                 {
                     "code": "L", "title": "Ноги",
@@ -732,7 +739,9 @@ SPLIT_TEMPLATES = {
                 {
                     "code": "A", "title": "Руки",
                     "patterns": ["biceps", "triceps", "core"],
-                    "patterns_medium": ["arms"],
+                    # без "arms" — база и так покрывает и бицепс, и трицепс, "arms"
+                    # только задвоил бы имя одного из них.
+                    "patterns_medium": [],
                     "patterns_long": [],
                 },
             ],
@@ -748,13 +757,13 @@ SPLIT_TEMPLATES = {
                     "code": "P1", "title": "Push A",
                     "patterns": ["push_h", "push_v", "arms", "core"],
                     "patterns_medium": ["chest_acc"],
-                    "patterns_long": ["triceps"],
+                    "patterns_long": ["shoulder_acc"],
                 },
                 {
                     "code": "Pl1", "title": "Pull A",
                     "patterns": ["pull_h", "pull_v", "arms"],
-                    "patterns_medium": ["biceps"],
-                    "patterns_long": ["core"],
+                    "patterns_medium": ["core"],
+                    "patterns_long": [],
                 },
                 {
                     "code": "L1", "title": "Ноги A",
@@ -766,13 +775,13 @@ SPLIT_TEMPLATES = {
                     "code": "P2", "title": "Push B",
                     "patterns": ["push_v", "push_h", "arms", "core"],
                     "patterns_medium": ["chest_acc"],
-                    "patterns_long": ["triceps"],
+                    "patterns_long": ["shoulder_acc"],
                 },
                 {
                     "code": "Pl2", "title": "Pull B",
                     "patterns": ["pull_v", "pull_h", "arms"],
-                    "patterns_medium": ["biceps"],
-                    "patterns_long": ["core"],
+                    "patterns_medium": ["core"],
+                    "patterns_long": [],
                 },
                 {
                     "code": "L2", "title": "Ноги B",
