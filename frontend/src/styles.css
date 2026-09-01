@@ -354,12 +354,21 @@ input[type="number"]:focus {
 }
 
 .navbar button .icon {
-  font-size: 20px;
-  transition: transform 0.15s ease, filter 0.15s ease;
+  display: flex;
+  transition: transform 0.15s ease;
+}
+
+.navbar button .icon svg {
+  width: 21px;
+  height: 21px;
 }
 
 .navbar button.active {
-  color: var(--tg-link);
+  color: var(--accent);
+}
+
+.navbar button.active .icon svg {
+  stroke-width: 2;
 }
 
 .navbar button.active .icon {
