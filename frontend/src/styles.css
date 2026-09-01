@@ -416,6 +416,12 @@ input[type="number"]:focus {
   border-color: transparent;
 }
 
+/* .hint внутри задаёт свой серый цвет (нужен на обычном фоне карточки) —
+   на выбранной фиолетовой заливке он нечитаем, перекрываем светлым. */
+.choice-toggle.selected .hint {
+  color: rgba(255, 255, 255, 0.82);
+}
+
 .choice-toggle.small {
   padding: 6px 10px;
   font-size: 12.5px;
