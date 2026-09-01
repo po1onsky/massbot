@@ -434,21 +434,32 @@ _TIER_PRIORITY = {
 }
 
 
+def _resolve_tier(pattern: str, equipment: str) -> str:
+    """Какой уровень оборудования (ключ в EXERCISE_POOL[pattern]) реально
+    используется для этого паттерна+оборудования — нужно отдельно от списка
+    вариантов, чтобы показать пользователю тег "штанга/гантели/свой вес"."""
+    tiers = EXERCISE_POOL[pattern]
+    if "any" in tiers:
+        return "any"
+    for eq in _TIER_PRIORITY.get(equipment, ["none"]):
+        if eq in tiers:
+            return eq
+    return next(iter(tiers))
+
+
 def _variants_for(pattern: str, equipment: str) -> list:
     """Список вариантов упражнения в СВОЁМ уровне оборудования — источник и
     для pick_exercise (генерация программы), и для UI выбора варианта."""
-    tiers = EXERCISE_POOL[pattern]
-    if "any" in tiers:
-        return tiers["any"]
-    for eq in _TIER_PRIORITY.get(equipment, ["none"]):
-        if eq in tiers:
-            return tiers[eq]
-    return next(iter(tiers.values()))
+    return EXERCISE_POOL[pattern][_resolve_tier(pattern, equipment)]
 
 
 def pick_exercise(pattern: str, equipment: str, variant_idx: int = 0) -> dict:
     variants = _variants_for(pattern, equipment)
     return variants[variant_idx % len(variants)]
+
+
+def pick_exercise_tier(pattern: str, equipment: str) -> str:
+    return _resolve_tier(pattern, equipment)
 
 
 def pattern_variant_options(pattern: str, equipment: str) -> list:
@@ -902,6 +913,7 @@ def generate_workout_templates(
                     "sets": ex["sets"],
                     "reps": ex["reps"],
                     "step": ex["step"],
+                    "equip_tier": pick_exercise_tier(pattern, equipment),
                 }
             )
         days.append({"code": d["code"], "title": d["title"], "exercises": exercises})

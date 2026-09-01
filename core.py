@@ -34,6 +34,7 @@ from program import (
     apply_block_style,
     pattern_variant_options,
     pick_exercise,
+    pick_exercise_tier,
 )
 
 TZ = ZoneInfo(os.environ.get("TZ_NAME", "Europe/Moscow"))
@@ -303,7 +304,15 @@ def _resolve_variant(chat_id: int, e: dict, equipment: str) -> dict:
     if len(options) <= 1:
         return e
     picked = options[variant_idx % len(options)]
-    return {**e, "name": picked["name"], "kind": picked["kind"], "sets": picked["sets"], "reps": picked["reps"], "step": picked["step"]}
+    return {
+        **e,
+        "name": picked["name"],
+        "kind": picked["kind"],
+        "sets": picked["sets"],
+        "reps": picked["reps"],
+        "step": picked["step"],
+        "equip_tier": pick_exercise_tier(e["key"], equipment),
+    }
 
 
 def get_program_days_for_block(u, block_index: int) -> list:
@@ -489,12 +498,21 @@ def exercise_alternatives(e: dict, allow: bool) -> list:
         return []
     seen = {e["name"]}
     out = []
-    for variants in tiers.values():
+    for tier, variants in tiers.items():
         for alt in variants:
             if alt["name"] in seen:
                 continue
             seen.add(alt["name"])
-            out.append({"name": alt["name"], "kind": alt["kind"], "sets": alt["sets"], "reps": alt["reps"], "step": alt["step"]})
+            out.append(
+                {
+                    "name": alt["name"],
+                    "kind": alt["kind"],
+                    "sets": alt["sets"],
+                    "reps": alt["reps"],
+                    "step": alt["step"],
+                    "equip_tier": tier,
+                }
+            )
     return out
 
 
@@ -520,6 +538,7 @@ def exercise_view(u, e: dict, deload: bool, allow_alternatives: bool) -> dict:
         "reps": e["reps"],
         "step": e["step"],
         "working_weight": working_weight,
+        "equip_tier": e.get("equip_tier", "none"),
         "variant_idx": variant_idx,
         "variant_options": variant_options,
         "alternatives": exercise_alternatives(e, allow_alternatives),
@@ -644,8 +663,34 @@ def planned_weight_for(u, d: int) -> float:
     return round(start + (goal - start) * frac, 1)
 
 
+def week_days(u) -> list:
+    """Пн–Вс текущей календарной недели с реальными датами — для полоски из
+    7 кубиков в шапке (вместо абстрактного "неделя N из M"): где сегодня,
+    какие дни по плану тренировочные, какие уже отмечены тренировкой."""
+    training = {int(d) for d in (u["training_days"] or "").split(",") if d != ""}
+    today = today_date()
+    monday = today - dt.timedelta(days=today.weekday())
+    week = [monday + dt.timedelta(days=i) for i in range(7)]
+    rows = db.execute(
+        "SELECT DISTINCT date FROM sessions WHERE chat_id=? AND date BETWEEN ? AND ?",
+        (u["chat_id"], week[0].isoformat(), week[-1].isoformat()),
+    ).fetchall()
+    done_dates = {r["date"] for r in rows}
+    return [
+        {
+            "date": d.isoformat(),
+            "weekday": i,
+            "is_today": d == today,
+            "is_training": i in training,
+            "done": d.isoformat() in done_dates,
+        }
+        for i, d in enumerate(week)
+    ]
+
+
 def me_payload(u) -> dict:
     return {
+        "week": week_days(u),
         "chat_id": u["chat_id"],
         "first_name": u["first_name"],
         "start_date": u["start_date"],

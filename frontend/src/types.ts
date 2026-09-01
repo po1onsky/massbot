@@ -1,11 +1,14 @@
 export type ExerciseKind = "weight" | "bodyweight" | "time";
 
+export type EquipTier = "barbell" | "dumbbell" | "none" | "any";
+
 export interface ExerciseAlternative {
   name: string;
   kind: ExerciseKind;
   sets: number;
   reps: number;
   step: number;
+  equip_tier: EquipTier;
 }
 
 export interface VariantOption {
@@ -21,9 +24,18 @@ export interface TodayExercise {
   reps: number;
   step: number;
   working_weight: number | null;
+  equip_tier: EquipTier;
   variant_idx: number;
   variant_options: VariantOption[];
   alternatives: ExerciseAlternative[];
+}
+
+export interface WeekDay {
+  date: string;
+  weekday: number; // 0=Пн .. 6=Вс
+  is_today: boolean;
+  is_training: boolean;
+  done: boolean;
 }
 
 export interface TodayPayload {
@@ -51,6 +63,7 @@ export type Experience = "beginner" | "experienced";
 export type SessionLength = "short" | "medium" | "long";
 
 export interface MePayload {
+  week: WeekDay[];
   chat_id: number;
   first_name: string | null;
   start_date: string;

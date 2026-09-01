@@ -3,28 +3,59 @@ import { api, ApiError } from "../api";
 import { haptic, hapticNotify } from "../telegram";
 import Loading from "../components/Loading";
 import Stepper from "../components/Stepper";
-import { exerciseIcon } from "../exerciseIcons";
-import type { ExerciseKind, LogNote, TodayExercise, TodayPayload } from "../types";
+import type { EquipTier, ExerciseKind, LogNote, MePayload, TodayExercise, TodayPayload } from "../types";
 
 type SetsState = Record<string, { weights: string[]; reps: string[] }>;
-type Substitute = { name: string; kind: ExerciseKind; sets: number; reps: number };
+type Substitute = { name: string; kind: ExerciseKind; sets: number; reps: number; equip_tier?: EquipTier };
 type SubstitutesState = Record<string, Substitute | undefined>;
 
+// Тег вместо иконки-эмодзи: что в руках — штанга/гантели/свой вес/секунды.
+// Компактно и honest — раньше тут был набор случайно подобранных эмодзи.
+function exerciseTag(kind: ExerciseKind, equipTier?: EquipTier): string {
+  if (kind === "time") return "СЕК";
+  if (kind === "bodyweight") return "BW";
+  if (equipTier === "dumbbell") return "DB";
+  if (equipTier === "barbell") return "BAR";
+  return "ВЕС";
+}
+
+// Пока нет истории по упражнению, вес неизвестен — раньше тут была целая
+// фраза "подбери вес, 3–4 повтора в запасе", которая на экране выглядела
+// разговорной вставкой посреди цифр. Теперь это отдельный компактный тег
+// (см. .tag-outline), а тут просто голые сеты×повторы.
 function targetText(e: TodayExercise): string {
   if (e.kind === "time") return `${e.sets}×${e.reps} сек`;
-  if (e.kind === "bodyweight") return `${e.sets}×${e.reps} (свой вес)`;
+  if (e.kind === "bodyweight") return `${e.sets}×${e.reps} · свой вес`;
   if (e.working_weight != null) return `${e.sets}×${e.reps} → ${e.working_weight} кг`;
-  return `${e.sets}×${e.reps} → подбери вес, 3–4 повтора в запасе`;
+  return `${e.sets}×${e.reps}`;
+}
+
+function needsWeightPick(kind: ExerciseKind, workingWeight: number | null): boolean {
+  return kind === "weight" && workingWeight == null;
 }
 
 function subTargetText(s: Substitute): string {
   if (s.kind === "time") return `${s.sets}×${s.reps} сек`;
-  if (s.kind === "bodyweight") return `${s.sets}×${s.reps} (свой вес)`;
-  return `${s.sets}×${s.reps} → подбери вес`;
+  if (s.kind === "bodyweight") return `${s.sets}×${s.reps} · свой вес`;
+  return `${s.sets}×${s.reps}`;
 }
 
 function unitLabel(kind: TodayExercise["kind"]): string {
   return kind === "time" ? "сек" : "повт.";
+}
+
+const IN_DAY = ["в понедельник", "во вторник", "в среду", "в четверг", "в пятницу", "в субботу", "в воскресенье"];
+
+// Когда следующая тренировка по дням недели (training_days), а не по счётчику
+// "неделя N" — для карточки дня отдыха. null, если тренировочных дней нет
+// вообще (не должно случаться — онбординг/настройки требуют хотя бы один).
+function nextTrainingLabel(trainingDays: Set<number>, todayWeekday: number): string | null {
+  if (trainingDays.size === 0) return null;
+  for (let i = 1; i <= 7; i++) {
+    const wd = (todayWeekday + i) % 7;
+    if (trainingDays.has(wd)) return i === 1 ? "завтра" : IN_DAY[wd];
+  }
+  return null;
 }
 
 function noteVariant(note: string): "success" | "warning" | "neutral" {
@@ -45,7 +76,7 @@ function buildInitialSets(exercises: TodayExercise[]): SetsState {
   return state;
 }
 
-export default function TodayPage({ onLogged }: { onLogged: () => void }) {
+export default function TodayPage({ me, onLogged }: { me: MePayload; onLogged: () => void }) {
   const [today, setToday] = useState<TodayPayload | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [mode, setMode] = useState<"view" | "log" | "result">("view");
@@ -58,6 +89,7 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
   const [notes, setNotes] = useState<LogNote[]>([]);
   const [weightInput, setWeightInput] = useState("");
   const [weightMsg, setWeightMsg] = useState<string | null>(null);
+  const [forceWorkout, setForceWorkout] = useState(false);
 
   function load() {
     setError(null);
@@ -74,6 +106,11 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
 
   if (error) return <p className="hint">Ошибка: {error}</p>;
   if (!today) return <Loading cards={2} />;
+
+  const todayEntry = me.week.find((d) => d.is_today);
+  const isTrainingDay = todayEntry?.is_training ?? true;
+  const trainingSet = new Set((me.training_days || "").split(",").filter(Boolean).map(Number));
+  const isRestDay = !isTrainingDay && !today.logged_today && !forceWorkout;
 
   function setReps(key: string, idx: number, value: string) {
     setSets((prev) => {
@@ -241,10 +278,7 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
           <h2>Тренировка записана</h2>
           {notes.map((n) => (
             <div key={n.key} className={`log-note ${noteVariant(n.note)}`}>
-              <div className="name">
-                <span className="ex-icon">{exerciseIcon(n.key)}</span>
-                {n.name}
-              </div>
+              <div className="name">{n.name}</div>
               <div className="hint">{n.note}</div>
             </div>
           ))}
@@ -278,11 +312,14 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
             return (
               <div className="exercise-block" key={e.key} style={{ opacity: isSkipped ? 0.4 : 1 }}>
                 <div className="ex-title">
-                  <span className="ex-icon">{exerciseIcon(e.key)}</span>
+                  <span className="tag-outline">{exerciseTag(effectiveKind, sub ? sub.equip_tier : e.equip_tier)}</span>
                   {sub ? sub.name : e.name}
                   {sub && <span className="hint"> (замена «{e.name}»)</span>}
                 </div>
-                <div className="ex-target">{sub ? subTargetText(sub) : targetText(e)}</div>
+                <div className="ex-target">
+                  {sub ? subTargetText(sub) : targetText(e)}
+                  {!sub && needsWeightPick(e.kind, e.working_weight) && <span className="tag-outline accent">Подбери вес</span>}
+                </div>
 
                 {!isSkipped && !sub && e.variant_options.length > 1 && (
                   <div className="choice-grid" style={{ marginTop: 6, marginBottom: 4 }}>
@@ -387,6 +424,44 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
     );
   }
 
+  const weightCard = (
+    <div className="card">
+      <h3>Утренний вес</h3>
+      <div className="btn-row">
+        <input
+          type="number"
+          inputMode="decimal"
+          placeholder="69.4"
+          value={weightInput}
+          onChange={(e) => setWeightInput(e.target.value)}
+        />
+        <button className="btn small" style={{ width: 90 }} onClick={submitWeight}>
+          Записать
+        </button>
+      </div>
+      {weightMsg && <p className="hint" style={{ marginTop: 8 }}>{weightMsg}</p>}
+    </div>
+  );
+
+  if (isRestDay) {
+    const nextLabel = nextTrainingLabel(trainingSet, todayEntry?.weekday ?? 0);
+    return (
+      <div className="stack">
+        <div className="card">
+          <h2>День отдыха</h2>
+          <p className="hint">
+            Сегодня по плану без тренировки — мышцам нужно восстановиться.
+            {nextLabel && ` Следующая тренировка — ${nextLabel}.`}
+          </p>
+          <button className="btn secondary" style={{ marginTop: 12 }} onClick={() => setForceWorkout(true)}>
+            Потренироваться всё равно
+          </button>
+        </div>
+        {weightCard}
+      </div>
+    );
+  }
+
   return (
     <div className="stack">
       <div className="card">
@@ -394,6 +469,11 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
         <div className="hint" style={{ marginBottom: 8 }}>
           {today.phase_name} · день {today.day_number}
         </div>
+        {!isTrainingDay && (
+          <div className="hint" style={{ marginBottom: 8 }}>
+            Внеплановая тренировка — сегодня по расписанию отдых.
+          </div>
+        )}
         {today.deload && <div className="badge warn">Разгрузочная неделя: веса 60%, объём вдвое меньше</div>}
         {today.logged_today && (
           <div className="hint" style={{ marginTop: 8 }}>
@@ -404,10 +484,13 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
           {today.exercises.map((e) => (
             <div className="row" key={e.key}>
               <span className="label">
-                <span className="ex-icon">{exerciseIcon(e.key)}</span>
+                <span className="tag-outline">{exerciseTag(e.kind, e.equip_tier)}</span>
                 {e.name}
               </span>
-              <span className="value">{targetText(e)}</span>
+              <span className="value">
+                {targetText(e)}
+                {needsWeightPick(e.kind, e.working_weight) && <span className="tag-outline accent">Подбери вес</span>}
+              </span>
             </div>
           ))}
         </div>
@@ -422,22 +505,7 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
         {today.logged_today ? "Записать ещё раз" : "Записать тренировку"}
       </button>
 
-      <div className="card">
-        <h3>⚖️ Утренний вес</h3>
-        <div className="btn-row">
-          <input
-            type="number"
-            inputMode="decimal"
-            placeholder="69.4"
-            value={weightInput}
-            onChange={(e) => setWeightInput(e.target.value)}
-          />
-          <button className="btn small" style={{ width: 90 }} onClick={submitWeight}>
-            Записать
-          </button>
-        </div>
-        {weightMsg && <p className="hint" style={{ marginTop: 8 }}>{weightMsg}</p>}
-      </div>
+      {weightCard}
     </div>
   );
 }

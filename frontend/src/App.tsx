@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "./api";
 import NavBar, { type Tab } from "./components/NavBar";
-import ProgressBar from "./components/ProgressBar";
+import WeekStrip from "./components/WeekStrip";
 import Loading from "./components/Loading";
 import TodayPage from "./pages/TodayPage";
 import StatsPage from "./pages/StatsPage";
@@ -32,13 +32,9 @@ export default function App() {
         {me?.onboarded && (
           <>
             <div className="sub">
-              {me.phase_name} · день {me.day_number + 1} · {me.start_weight} → {me.goal_weight} кг
+              {me.phase_name} · {me.start_weight} → {me.goal_weight} кг
             </div>
-            {me.total_days != null && (
-              <div style={{ marginTop: 6 }}>
-                <ProgressBar value={(me.day_number + 1) / me.total_days} />
-              </div>
-            )}
+            <WeekStrip week={me.week} />
           </>
         )}
         {!isInsideTelegram() && (
@@ -52,7 +48,7 @@ export default function App() {
         {error && <p className="hint">Ошибка: {error}</p>}
         {!me && !error && <Loading lines={2} />}
         {me && !me.onboarded && <Onboarding onDone={refreshMe} />}
-        {me?.onboarded && tab === "today" && <TodayPage onLogged={refreshMe} />}
+        {me?.onboarded && tab === "today" && <TodayPage me={me} onLogged={refreshMe} />}
         {me?.onboarded && tab === "stats" && <StatsPage />}
         {me?.onboarded && tab === "plan" && <PlanPage />}
         {me?.onboarded && tab === "food" && <FoodPage />}

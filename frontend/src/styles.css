@@ -1,21 +1,23 @@
 :root {
-  --tg-bg: #f7f7fb;
-  --tg-text: #14141a;
-  --tg-hint: #78788a;
-  --tg-link: #5b5bf0;
-  --tg-button: #5b5bf0;
-  --tg-button-text: #ffffff;
+  /* "Кованая сталь" — графит/бумага + латунь, без градиентов. Вариант 0
+     из трёх питчей (см. историю), выбран целиком. */
+  --tg-bg: #f4f2ee;
+  --tg-text: #1c1b19;
+  --tg-hint: #7a766e;
+  --tg-link: #9c6a2e;
+  --tg-button: #9c6a2e;
+  --tg-button-text: #f8f6f2;
   --tg-secondary-bg: #ffffff;
-  --tg-section-separator: rgba(20, 20, 26, 0.09);
+  --tg-section-separator: rgba(28, 27, 25, 0.1);
   --safe-bottom: env(safe-area-inset-bottom, 0px);
 
-  /* Премиальный градиентный акцент — на кнопках, бейджах, прогрессе,
-     выбранных состояниях. Один и тот же градиент везде — единый фирменный
-     штрих вместо плоской заливки. */
-  --accent-gradient: linear-gradient(135deg, #6a5bf6, #a855f7);
-  --accent-glow: 0 6px 20px rgba(107, 91, 246, 0.28);
-  --shadow-card: 0 1px 2px rgba(20, 20, 26, 0.04), 0 8px 24px rgba(20, 20, 26, 0.06);
-  --bg-wash: radial-gradient(ellipse 120% 60% at 50% -10%, rgba(107, 91, 246, 0.08), transparent 60%);
+  --font-display: "Oswald", -apple-system, sans-serif;
+  --font-body: "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  /* Один плоский акцент вместо градиента — латунь. */
+  --accent: #9c6a2e;
+  --accent-bg: rgba(156, 106, 46, 0.12);
+  --shadow-card: 0 1px 2px rgba(28, 27, 25, 0.04), 0 6px 16px rgba(28, 27, 25, 0.05);
 
   /* Семантические акценты — единые для success/warning/danger по всему
      приложению (раньше были локальные inline-цвета в разных местах). */
@@ -26,27 +28,43 @@
   --accent-danger: #ff3b30;
   --accent-danger-bg: rgba(255, 59, 48, 0.14);
   --accent-info: var(--tg-link);
-  --accent-info-bg: rgba(91, 91, 240, 0.12);
+  --accent-info-bg: rgba(156, 106, 46, 0.12);
 }
 
 @media (prefers-color-scheme: dark) {
-  :root {
-    --tg-bg: #0a0a10;
-    --tg-text: #f5f5f7;
-    --tg-hint: #8c8d9a;
-    --tg-link: #9c8bff;
-    --tg-button: #7c6bfb;
-    --tg-button-text: #ffffff;
-    --tg-secondary-bg: #17171f;
+  :root:not([data-theme="light"]) {
+    --tg-bg: #1c1c1e;
+    --tg-text: #f2f0ec;
+    --tg-hint: #8d8c88;
+    --tg-link: #d7a15f;
+    --tg-button: #c98a3e;
+    --tg-button-text: #1c1c1e;
+    --tg-secondary-bg: #232326;
     --tg-section-separator: rgba(255, 255, 255, 0.08);
 
-    --accent-gradient: linear-gradient(135deg, #7c6bfb, #c084fc);
-    --accent-glow: 0 8px 28px rgba(124, 107, 251, 0.35);
-    --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 10px 30px rgba(0, 0, 0, 0.45);
-    --bg-wash: radial-gradient(ellipse 120% 50% at 50% -10%, rgba(124, 107, 251, 0.16), transparent 60%);
+    --accent: #c98a3e;
+    --accent-bg: rgba(201, 138, 62, 0.16);
+    --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 22px rgba(0, 0, 0, 0.4);
 
-    --accent-info-bg: rgba(156, 139, 255, 0.16);
+    --accent-info-bg: rgba(201, 138, 62, 0.16);
   }
+}
+
+:root[data-theme="dark"] {
+  --tg-bg: #1c1c1e;
+  --tg-text: #f2f0ec;
+  --tg-hint: #8d8c88;
+  --tg-link: #d7a15f;
+  --tg-button: #c98a3e;
+  --tg-button-text: #1c1c1e;
+  --tg-secondary-bg: #232326;
+  --tg-section-separator: rgba(255, 255, 255, 0.08);
+
+  --accent: #c98a3e;
+  --accent-bg: rgba(201, 138, 62, 0.16);
+  --shadow-card: 0 1px 0 rgba(255, 255, 255, 0.03) inset, 0 8px 22px rgba(0, 0, 0, 0.4);
+
+  --accent-info-bg: rgba(201, 138, 62, 0.16);
 }
 
 * {
@@ -61,10 +79,9 @@ body,
 
 body {
   margin: 0;
-  background: var(--bg-wash), var(--tg-bg);
-  background-attachment: fixed;
+  background: var(--tg-bg);
   color: var(--tg-text);
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-body);
   -webkit-tap-highlight-color: transparent;
   letter-spacing: -0.01em;
 }
@@ -82,9 +99,10 @@ body {
 
 .app-header h1 {
   margin: 0;
+  font-family: var(--font-display);
   font-size: 20px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
+  font-weight: 600;
+  letter-spacing: -0.01em;
 }
 
 .app-header .sub {
@@ -102,7 +120,7 @@ body {
 .card {
   background: var(--tg-secondary-bg);
   border: 1px solid var(--tg-section-separator);
-  border-radius: 18px;
+  border-radius: 10px;
   padding: 16px;
   margin-bottom: 12px;
   box-shadow: var(--shadow-card);
@@ -110,15 +128,20 @@ body {
 
 .card h2 {
   margin: 0 0 8px;
-  font-size: 17px;
-  font-weight: 800;
-  letter-spacing: -0.01em;
+  font-family: var(--font-display);
+  font-size: 18px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.02em;
 }
 
 .card h3 {
   margin: 0 0 6px;
-  font-size: 14px;
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
 }
 
 .row {
@@ -140,6 +163,7 @@ body {
 
 .row .value {
   font-weight: 600;
+  font-variant-numeric: tabular-nums;
 }
 
 .hint {
@@ -150,13 +174,15 @@ body {
 
 .badge {
   display: inline-block;
-  background: var(--accent-gradient);
-  box-shadow: var(--accent-glow);
+  background: var(--accent);
   color: var(--tg-button-text);
-  border-radius: 8px;
+  border-radius: 4px;
   padding: 2px 8px;
-  font-size: 12px;
-  font-weight: 700;
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
 }
 
 .badge.warn {
@@ -166,46 +192,44 @@ body {
 .btn {
   appearance: none;
   border: none;
-  border-radius: 14px;
-  background: var(--accent-gradient);
-  box-shadow: var(--accent-glow);
+  border-radius: 10px;
+  background: var(--accent);
   color: var(--tg-button-text);
-  font-size: 15px;
-  font-weight: 700;
-  letter-spacing: -0.01em;
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
   padding: 13px 16px;
   width: 100%;
   cursor: pointer;
-  transition: transform 0.15s ease, box-shadow 0.15s ease;
+  transition: transform 0.15s ease, filter 0.15s ease;
 }
 
 .btn:active {
-  transform: scale(0.97);
-  box-shadow: 0 4px 14px rgba(107, 91, 246, 0.24);
+  transform: scale(0.98);
+  filter: brightness(0.92);
 }
 
 .btn:disabled {
   opacity: 0.5;
-  box-shadow: none;
 }
 
 .btn.secondary {
   background: var(--tg-secondary-bg);
   color: var(--tg-text);
   border: 1px solid var(--tg-section-separator);
-  box-shadow: none;
 }
 
 .btn.secondary:active {
-  box-shadow: none;
   background: var(--tg-section-separator);
 }
 
 .btn.small {
   width: auto;
   padding: 9px 13px;
-  font-size: 13px;
-  border-radius: 11px;
+  font-size: 12px;
+  border-radius: 8px;
 }
 
 .btn-row {
@@ -217,8 +241,10 @@ input[type="text"],
 input[type="number"] {
   background: var(--tg-bg);
   border: 1px solid var(--tg-section-separator);
-  border-radius: 11px;
+  border-radius: 8px;
   color: var(--tg-text);
+  font-family: var(--font-body);
+  font-variant-numeric: tabular-nums;
   font-size: 15px;
   padding: 9px 11px;
   width: 100%;
@@ -228,8 +254,8 @@ input[type="number"] {
 input[type="text"]:focus,
 input[type="number"]:focus {
   outline: none;
-  border-color: var(--tg-button);
-  box-shadow: 0 0 0 3px rgba(107, 91, 246, 0.16);
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-bg);
 }
 
 .exercise-block {
@@ -338,7 +364,6 @@ input[type="number"]:focus {
 
 .navbar button.active .icon {
   transform: translateY(-1px) scale(1.08);
-  filter: drop-shadow(0 2px 8px rgba(107, 91, 246, 0.45));
 }
 
 .chart-wrap {
@@ -382,8 +407,7 @@ input[type="number"]:focus {
 }
 
 .day-toggle.selected {
-  background: var(--accent-gradient);
-  box-shadow: var(--accent-glow);
+  background: var(--accent);
   color: var(--tg-button-text);
   border-color: transparent;
 }
@@ -410,16 +434,17 @@ input[type="number"]:focus {
 }
 
 .choice-toggle.selected {
-  background: var(--accent-gradient);
-  box-shadow: var(--accent-glow);
+  background: var(--accent);
   color: var(--tg-button-text);
   border-color: transparent;
 }
 
 /* .hint внутри задаёт свой серый цвет (нужен на обычном фоне карточки) —
-   на выбранной фиолетовой заливке он нечитаем, перекрываем светлым. */
+   на выбранной латунной заливке он нечитаем, перекрываем цветом кнопочного
+   текста (уже подобран под контраст с --accent в обеих темах). */
 .choice-toggle.selected .hint {
-  color: rgba(255, 255, 255, 0.82);
+  color: var(--tg-button-text);
+  opacity: 0.75;
 }
 
 .choice-toggle.small {
@@ -486,8 +511,7 @@ input[type="number"]:focus {
 .progress-fill {
   height: 100%;
   border-radius: 999px;
-  background: var(--accent-gradient);
-  box-shadow: var(--accent-glow);
+  background: var(--accent);
   transition: width 0.35s ease;
 }
 
@@ -574,10 +598,88 @@ input[type="number"]:focus {
   flex: none;
 }
 
-/* ------------------------------------------------------------------ иконка упражнения */
-.ex-icon {
-  display: inline-block;
-  margin-right: 6px;
+/* ------------------------------------------------------------------ тег упражнения (штанга/гантели/свой вес/подбери вес) */
+.tag-outline {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 28px;
+  height: 17px;
+  padding: 0 5px;
+  margin-right: 8px;
+  border: 1px solid var(--tg-hint);
+  border-radius: 3px;
+  color: var(--tg-hint);
+  font-family: var(--font-body);
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  vertical-align: middle;
+  white-space: nowrap;
+}
+
+.tag-outline.accent {
+  border-color: var(--accent);
+  color: var(--accent);
+  margin-left: 8px;
+  margin-right: 0;
+  text-transform: uppercase;
+}
+
+/* ------------------------------------------------------------------ полоска недели в шапке (вместо "неделя N из M") */
+.week-strip {
+  display: flex;
+  gap: 5px;
+  margin-top: 10px;
+  max-width: 260px;
+}
+
+.week-cube {
+  flex: 1;
+  aspect-ratio: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  border: 1px solid transparent;
+  font-family: var(--font-display);
+  font-size: 9.5px;
+  font-weight: 600;
+  text-transform: uppercase;
+  color: var(--tg-hint);
+}
+
+.week-cube.training {
+  border-color: var(--tg-section-separator);
+  color: var(--tg-text);
+}
+
+.week-cube.done {
+  border-color: var(--tg-section-separator);
+  color: var(--tg-text);
+  position: relative;
+}
+
+.week-cube.done::after {
+  content: "";
+  position: absolute;
+  bottom: 3px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: var(--accent);
+}
+
+.week-cube.today {
+  background: var(--accent);
+  color: var(--tg-button-text);
+  border-color: transparent;
+}
+
+.week-cube.rest {
+  opacity: 0.4;
 }
 
 /* ------------------------------------------------------------------ точки-прогресс в онбординге */
@@ -597,8 +699,7 @@ input[type="number"]:focus {
 
 .step-dot.active {
   width: 20px;
-  background: var(--accent-gradient);
-  box-shadow: var(--accent-glow);
+  background: var(--accent);
 }
 
 .step-dot.done {
@@ -704,7 +805,7 @@ input[type="number"]:focus {
 
 .card-stack-dot.active {
   width: 16px;
-  background: var(--accent-gradient);
+  background: var(--accent);
 }
 
 /* ------------------------------------------------------------------ график: тултип по тапу */
