@@ -8,6 +8,11 @@ export interface ExerciseAlternative {
   step: number;
 }
 
+export interface VariantOption {
+  idx: number;
+  name: string;
+}
+
 export interface TodayExercise {
   key: string;
   name: string;
@@ -16,6 +21,8 @@ export interface TodayExercise {
   reps: number;
   step: number;
   working_weight: number | null;
+  variant_idx: number;
+  variant_options: VariantOption[];
   alternatives: ExerciseAlternative[];
 }
 
@@ -41,6 +48,7 @@ export type Sex = "male" | "female";
 export type Goal = "gain" | "lose";
 export type Equipment = "gym" | "dumbbell" | "none";
 export type Experience = "beginner" | "experienced";
+export type SessionLength = "short" | "medium" | "long";
 
 export interface MePayload {
   chat_id: number;
@@ -64,6 +72,7 @@ export interface MePayload {
   equipment: Equipment;
   experience: Experience;
   split_key: string | null;
+  session_length: SessionLength;
 }
 
 export interface SplitOption {
@@ -71,6 +80,7 @@ export interface SplitOption {
   label: string;
   description: string;
   days_titles: string[];
+  exercise_counts: number[];
 }
 
 export interface StatsPayload {
@@ -104,6 +114,7 @@ export interface OnboardingIn {
   training_days: number[];
   split_key: string | null;
   starting_weights: Record<string, number>;
+  session_length: SessionLength | null;
 }
 
 export interface GoalResult {

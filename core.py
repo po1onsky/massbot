@@ -24,12 +24,16 @@ from program import (
     BEGINNER_START,
     BLOCK_WEEKS,
     EXERCISE_POOL,
+    SESSION_LENGTHS,
+    DEFAULT_SESSION_LENGTH,
     phase_for_day,
     planned_weight,
     generate_workout_templates,
     available_splits,
     block_style_for,
     apply_block_style,
+    pattern_variant_options,
+    pick_exercise,
 )
 
 TZ = ZoneInfo(os.environ.get("TZ_NAME", "Europe/Moscow"))
@@ -164,10 +168,29 @@ def init_db() -> None:
         ("wants_supplements", "INTEGER NOT NULL DEFAULT 1"),
         ("has_protein_powder", "INTEGER NOT NULL DEFAULT 1"),
         ("supplements_taken", f"TEXT NOT NULL DEFAULT '{ALL_SUPPLEMENT_KEYS}'"),
+        # DEFAULT 'short' — прежнее фиксированное число упражнений в дне,
+        # ничего не меняется молча для уже онбордившихся пользователей.
+        ("session_length", f"TEXT NOT NULL DEFAULT '{DEFAULT_SESSION_LENGTH}'"),
     ]
     for name, decl in migrations:
         if name not in cols:
             db.execute(f"ALTER TABLE users ADD COLUMN {name} {decl}")
+
+    # ex_state: чем заменить упражнение конкретного паттерна ПОСТОЯННО (не на
+    # одну сессию, как substitute_name в логе) — по умолчанию 0 = тот же
+    # вариант, что был всегда, ни для кого ничего не меняется молча.
+    ex_state_cols = {r["name"] for r in db.execute("PRAGMA table_info(ex_state)")}
+    if "variant_idx" not in ex_state_cols:
+        db.execute("ALTER TABLE ex_state ADD COLUMN variant_idx INTEGER NOT NULL DEFAULT 0")
+
+    # sets: вес теперь может отличаться по подходам — reps и weights это две
+    # параллельные CSV-строки одинаковой длины. Старая колонка weight (один
+    # вес на всё упражнение) остаётся для совместимости, но не читается нигде
+    # в коде — только пишется (топ-вес) для ручной отладки в БД.
+    sets_cols = {r["name"] for r in db.execute("PRAGMA table_info(sets)")}
+    if "weights" not in sets_cols:
+        db.execute("ALTER TABLE sets ADD COLUMN weights TEXT")
+
     db.commit()
     seed_foods_if_empty()
 
@@ -265,6 +288,24 @@ def total_blocks(u) -> Optional[int]:
     return max(1, -(-u["target_weeks"] // BLOCK_WEEKS))  # ceil division
 
 
+def _resolve_variant(chat_id: int, e: dict, equipment: str) -> dict:
+    """Если пользователь постоянно сменил вариант упражнения для этого
+    паттерна (см. set_exercise_variant) — подставляет его вместо того, что
+    было изначально сгенерировано и сохранено в program_json. ex_key (паттерн)
+    не меняется, поэтому прогрессия/история не рвутся."""
+    if e["key"] not in EXERCISE_POOL:
+        return e
+    st = ex_state(chat_id, e["key"])
+    variant_idx = st["variant_idx"] if st else 0
+    if not variant_idx:
+        return e
+    options = pattern_variant_options(e["key"], equipment)
+    if len(options) <= 1:
+        return e
+    picked = options[variant_idx % len(options)]
+    return {**e, "name": picked["name"], "kind": picked["kind"], "sets": picked["sets"], "reps": picked["reps"], "step": picked["step"]}
+
+
 def get_program_days_for_block(u, block_index: int) -> list:
     """Сплит с сетами/повторами, подогнанными под стиль конкретного блока —
     сами упражнения (и рабочий вес, ключуемый по паттерну) не меняются между
@@ -273,11 +314,12 @@ def get_program_days_for_block(u, block_index: int) -> list:
     if not is_new_style(u):
         return base_days
     style = block_style_for(block_index)
+    chat_id, equipment = u["chat_id"], u["equipment"]
     return [
         {
             "code": d["code"],
             "title": d["title"],
-            "exercises": [apply_block_style(e, style) for e in d["exercises"]],
+            "exercises": [apply_block_style(_resolve_variant(chat_id, e, equipment), style) for e in d["exercises"]],
         }
         for d in base_days
     ]
@@ -432,30 +474,44 @@ def save_weight(chat_id: int, kg: float):
 
 # ------------------------------------------------------------------ сериализация для API
 def exercise_alternatives(e: dict, allow: bool) -> list:
-    """Чем можно заменить упражнение на сегодня (тот же паттерн движения,
-    другое оборудование) — например тренажёр сломан. Только для сгенерированной
-    программы: у легаси-программы ключи — конкретные упражнения, а не паттерны,
-    и часть из них (squat/calf) случайно совпадает по имени с новыми
-    паттернами — allow=False явно отключает подмену, чтобы не словить чужие
-    альтернативы по случайному совпадению ключа."""
+    """Чем можно заменить упражнение на СЕГОДНЯ (тренажёр сломан и т.п.) —
+    разовая замена, прогрессию не двигает (см. log_workout). Отдаёт варианты
+    по ВСЕМ уровням оборудования паттерна, не только по своему — если дома
+    нет штанги, это не помешает разово подменить упражнение на сессии в зале.
+    Только для сгенерированной программы: у легаси-программы ключи —
+    конкретные упражнения, а не паттерны, и часть из них (squat/calf) случайно
+    совпадает по имени с новыми паттернами — allow=False явно отключает
+    подмену, чтобы не словить чужие альтернативы по случайному совпадению."""
     if not allow:
         return []
-    pool = EXERCISE_POOL.get(e["key"])
-    if not pool:
+    tiers = EXERCISE_POOL.get(e["key"])
+    if not tiers:
         return []
-    return [
-        {"name": alt["name"], "kind": alt["kind"], "sets": alt["sets"], "reps": alt["reps"], "step": alt["step"]}
-        for alt in pool
-        if alt["name"] != e["name"]
-    ]
+    seen = {e["name"]}
+    out = []
+    for variants in tiers.values():
+        for alt in variants:
+            if alt["name"] in seen:
+                continue
+            seen.add(alt["name"])
+            out.append({"name": alt["name"], "kind": alt["kind"], "sets": alt["sets"], "reps": alt["reps"], "step": alt["step"]})
+    return out
 
 
-def exercise_view(chat_id: int, e: dict, deload: bool, allow_alternatives: bool) -> dict:
+def exercise_view(u, e: dict, deload: bool, allow_alternatives: bool) -> dict:
+    chat_id = u["chat_id"]
     st = ex_state(chat_id, e["key"])
     working_weight = None
     if e["kind"] == "weight" and st and st["working_weight"]:
         working_weight = st["working_weight"] * (0.6 if deload else 1)
         working_weight = round(working_weight, 1)
+    variant_idx = 0
+    variant_options = []
+    if allow_alternatives and e["key"] in EXERCISE_POOL:
+        variant_idx = st["variant_idx"] if st else 0
+        opts = pattern_variant_options(e["key"], u["equipment"])
+        if len(opts) > 1:
+            variant_options = [{"idx": i, "name": o["name"]} for i, o in enumerate(opts)]
     return {
         "key": e["key"],
         "name": e["name"],
@@ -464,6 +520,8 @@ def exercise_view(chat_id: int, e: dict, deload: bool, allow_alternatives: bool)
         "reps": e["reps"],
         "step": e["step"],
         "working_weight": working_weight,
+        "variant_idx": variant_idx,
+        "variant_options": variant_options,
         "alternatives": exercise_alternatives(e, allow_alternatives),
     }
 
@@ -480,8 +538,26 @@ def today_payload(u) -> dict:
         "day_number": day_number(u) + 1,
         "deload": deload,
         "logged_today": has_session_today(u["chat_id"]),
-        "exercises": [exercise_view(u["chat_id"], e, deload, new_style) for e in day["exercises"]],
+        "exercises": [exercise_view(u, e, deload, new_style) for e in day["exercises"]],
     }
+
+
+def set_exercise_variant(u, key: str, variant_idx: int) -> dict:
+    """Постоянно (не на одну сессию) сменить упражнение для паттерна key —
+    рабочий вес и прогрессия продолжаются под тем же ключом, только меняется
+    отображаемое упражнение. variant_idx=0 — вернуться к варианту по умолчанию."""
+    if key not in EXERCISE_POOL:
+        raise ValueError("Неизвестное упражнение")
+    options = pattern_variant_options(key, u["equipment"])
+    variant_idx = max(0, min(int(variant_idx), len(options) - 1))
+    chat_id = u["chat_id"]
+    db.execute(
+        "INSERT INTO ex_state (chat_id, ex_key, working_weight, fail_streak, variant_idx) VALUES (?,?,NULL,0,?)"
+        " ON CONFLICT(chat_id, ex_key) DO UPDATE SET variant_idx=?",
+        (chat_id, key, variant_idx, variant_idx),
+    )
+    db.commit()
+    return today_payload(get_user(chat_id))
 
 
 def log_workout(u, entries: list, skipped: list) -> dict:
@@ -503,18 +579,30 @@ def log_workout(u, entries: list, skipped: list) -> dict:
         ex = ex_by_key(day, entry["key"])
         if ex is None:
             continue
-        weight = float(entry.get("weight") or 0)
         reps = [int(r) for r in entry.get("reps", []) if int(r) >= 0]
         if not reps:
             continue
+        # weights — вес на каждый подход отдельно (пирамида/сброс веса внутри
+        # упражнения); weight — старое поле с одним весом на всё упражнение,
+        # оставлено для старых клиентов и подставляется на все подходы разом.
+        weights_in = entry.get("weights") or []
+        if weights_in:
+            weights = [float(w) for w in weights_in]
+        else:
+            weights = [float(entry.get("weight") or 0)] * len(reps)
+        if len(weights) < len(reps):
+            weights += [weights[-1] if weights else 0.0] * (len(reps) - len(weights))
+        weights = weights[: len(reps)]
+        top_weight = max(weights) if weights else 0.0
+
         sub_name = (entry.get("substitute_name") or "").strip() or None
         # Замена (например тренажёр сломан) — сет пишем в историю как есть,
         # но прогрессию по обычному упражнению (ex["key"]) не двигаем: цифры
         # с другого движения/оборудования с ней не сравнимы.
         ok = 0 if sub_name else int(len(reps) >= ex["sets"] and all(r >= ex["reps"] for r in reps))
         db.execute(
-            "INSERT INTO sets (session_id, ex_key, weight, reps, ok) VALUES (?,?,?,?,?)",
-            (session_id, ex["key"], weight, ",".join(map(str, reps)), ok),
+            "INSERT INTO sets (session_id, ex_key, weight, weights, reps, ok) VALUES (?,?,?,?,?,?)",
+            (session_id, ex["key"], top_weight, ",".join(map(str, weights)), ",".join(map(str, reps)), ok),
         )
         db.commit()
         if sub_name:
@@ -528,9 +616,9 @@ def log_workout(u, entries: list, skipped: list) -> dict:
             )
             continue
         if not deload:
-            new_w, note = apply_progression(chat_id, ex, weight, reps)
+            new_w, note = apply_progression(chat_id, ex, top_weight, reps)
         else:
-            new_w, note = weight, "🔁 разгрузка — прогрессию не двигаем"
+            new_w, note = top_weight, "🔁 разгрузка — прогрессию не двигаем"
         notes.append({"key": ex["key"], "name": ex["name"], "note": note, "working_weight": new_w})
 
     for key in skipped or []:
@@ -579,6 +667,7 @@ def me_payload(u) -> dict:
         "equipment": u["equipment"],
         "experience": u["experience"],
         "split_key": u["split_key"],
+        "session_length": u["session_length"],
     }
 
 
@@ -924,12 +1013,14 @@ def _apply_program(
     experience: str,
     starting_weights: Optional[dict] = None,
     split_key: Optional[str] = None,
+    session_length: Optional[str] = None,
 ) -> list:
     days_count = max(1, len(training_days))
-    program_days, resolved_split_key = generate_workout_templates(equipment, days_count, split_key)
+    session_length = session_length if session_length in SESSION_LENGTHS else DEFAULT_SESSION_LENGTH
+    program_days, resolved_split_key = generate_workout_templates(equipment, days_count, split_key, session_length)
     db.execute(
-        "UPDATE users SET program_json=?, split_key=? WHERE chat_id=?",
-        (json.dumps(program_days, ensure_ascii=False), resolved_split_key, chat_id),
+        "UPDATE users SET program_json=?, split_key=?, session_length=? WHERE chat_id=?",
+        (json.dumps(program_days, ensure_ascii=False), resolved_split_key, session_length, chat_id),
     )
     starting = starting_weights or {}
     seen = set()
@@ -977,7 +1068,7 @@ def complete_onboarding(chat_id: int, data: dict) -> dict:
 
     _apply_program(
         chat_id, data["equipment"], training_days, data["experience"],
-        data.get("starting_weights"), data.get("split_key"),
+        data.get("starting_weights"), data.get("split_key"), data.get("session_length"),
     )
 
     u = get_user(chat_id)
@@ -1018,6 +1109,7 @@ def update_program(
     training_days: list,
     starting_weights: Optional[dict] = None,
     split_key: Optional[str] = None,
+    session_length: Optional[str] = None,
 ) -> dict:
     training_days = sorted({int(d) for d in training_days if 0 <= int(d) <= 6})
     training_days_val = ",".join(map(str, training_days)) or u["training_days"]
@@ -1026,7 +1118,10 @@ def update_program(
         (training_days_val, equipment, experience, u["chat_id"]),
     )
     db.commit()
-    _apply_program(u["chat_id"], equipment, training_days, experience, starting_weights, split_key)
+    _apply_program(
+        u["chat_id"], equipment, training_days, experience, starting_weights, split_key,
+        session_length or u["session_length"],
+    )
     return me_payload(get_user(u["chat_id"]))
 
 

@@ -13,6 +13,7 @@ import type {
   OnboardingResult,
   PlanPayload,
   PlotPayload,
+  SessionLength,
   SplitOption,
   StatsPayload,
   SuppPayload,
@@ -48,7 +49,7 @@ export const api = {
   me: () => request<MePayload>("/me"),
   today: () => request<TodayPayload>("/today"),
   log: (
-    entries: { key: string; weight: number; reps: number[]; substitute_name?: string }[],
+    entries: { key: string; weights: number[]; reps: number[]; substitute_name?: string }[],
     skipped: string[]
   ) =>
     request<{ session_id: number; notes: LogNote[] }>("/log", {
@@ -86,13 +87,17 @@ export const api = {
     experience: Experience,
     training_days: number[],
     split_key: string | null,
-    starting_weights: Record<string, number>
+    starting_weights: Record<string, number>,
+    session_length?: SessionLength
   ) =>
     request<MePayload>("/program", {
       method: "POST",
-      body: JSON.stringify({ equipment, experience, training_days, split_key, starting_weights }),
+      body: JSON.stringify({ equipment, experience, training_days, split_key, starting_weights, session_length }),
     }),
-  splits: (days: number) => request<SplitOption[]>(`/splits?days=${days}`),
+  splits: (days: number, session_length?: SessionLength) =>
+    request<SplitOption[]>(`/splits?days=${days}${session_length ? `&session_length=${session_length}` : ""}`),
+  setExerciseVariant: (key: string, variant_idx: number) =>
+    request<TodayPayload>("/exercise/variant", { method: "POST", body: JSON.stringify({ key, variant_idx }) }),
   foodSearch: (q: string) => request<FoodItem[]>(`/food/search?q=${encodeURIComponent(q)}`),
   foodLog: (date?: string) => request<FoodLogPayload>(`/food/log${date ? `?date=${date}` : ""}`),
   foodLogItem: (food_id: number, grams: number, date?: string) =>

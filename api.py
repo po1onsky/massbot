@@ -98,7 +98,8 @@ def get_today(auth: AuthUser = Depends(get_current_user)):
 
 class LogEntry(BaseModel):
     key: str
-    weight: float = 0
+    weight: float = 0  # legacy — один вес на всё упражнение, см. weights
+    weights: list[float] = []  # вес на каждый подход отдельно
     reps: list[int] = []
     substitute_name: Optional[str] = None
 
@@ -208,8 +209,23 @@ def post_days(body: DaysIn, auth: AuthUser = Depends(get_current_user)):
 
 # ------------------------------------------------------------------ онбординг / изменение цели и программы
 @api.get("/splits")
-def get_splits(days: int, auth: AuthUser = Depends(get_current_user)):
-    return core.available_splits(days)
+def get_splits(days: int, session_length: Optional[str] = None, auth: AuthUser = Depends(get_current_user)):
+    u = _user(auth)
+    return core.available_splits(days, session_length or u["session_length"])
+
+
+class ExerciseVariantIn(BaseModel):
+    key: str
+    variant_idx: int
+
+
+@api.post("/exercise/variant")
+def post_exercise_variant(body: ExerciseVariantIn, auth: AuthUser = Depends(get_current_user)):
+    u = _user(auth)
+    try:
+        return core.set_exercise_variant(u, body.key, body.variant_idx)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc))
 
 
 class OnboardingIn(BaseModel):
@@ -226,6 +242,7 @@ class OnboardingIn(BaseModel):
     training_days: list[int]
     split_key: Optional[str] = None
     starting_weights: dict[str, float] = {}
+    session_length: Optional[str] = None
 
 
 @api.post("/onboarding")
@@ -252,13 +269,15 @@ class ProgramIn(BaseModel):
     training_days: list[int]
     split_key: Optional[str] = None
     starting_weights: dict[str, float] = {}
+    session_length: Optional[str] = None
 
 
 @api.post("/program")
 def post_program(body: ProgramIn, auth: AuthUser = Depends(get_current_user)):
     u = _user(auth)
     return core.update_program(
-        u, body.equipment, body.experience, body.training_days, body.starting_weights, body.split_key
+        u, body.equipment, body.experience, body.training_days, body.starting_weights, body.split_key,
+        body.session_length,
     )
 
 

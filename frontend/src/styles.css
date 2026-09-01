@@ -353,6 +353,11 @@ input[type="number"] {
   border-color: var(--tg-button);
 }
 
+.choice-toggle.small {
+  padding: 6px 10px;
+  font-size: 12.5px;
+}
+
 .toast {
   position: fixed;
   bottom: calc(84px + var(--safe-bottom));

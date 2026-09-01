@@ -3,9 +3,15 @@ import { api, ApiError } from "../api";
 import { hapticNotify } from "../telegram";
 import Loading from "../components/Loading";
 import ProgressBar from "../components/ProgressBar";
-import type { Equipment, Experience, Goal, MePayload, SplitOption } from "../types";
+import type { Equipment, Experience, Goal, MePayload, SessionLength, SplitOption } from "../types";
 
 const DAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
+
+const SESSION_LENGTH_OPTIONS: { value: SessionLength; label: string }[] = [
+  { value: "short", label: "Коротко (~30 мин)" },
+  { value: "medium", label: "Средне (~45 мин)" },
+  { value: "long", label: "Длинно (~60 мин)" },
+];
 
 function ChoiceRow<T extends string>({
   options,
@@ -47,6 +53,7 @@ export default function SettingsPage({ onProfileChanged }: { onProfileChanged: (
   const [programOpen, setProgramOpen] = useState(false);
   const [equipment, setEquipment] = useState<Equipment>("gym");
   const [experience, setExperience] = useState<Experience>("experienced");
+  const [sessionLength, setSessionLength] = useState<SessionLength>("short");
   const [splitOptions, setSplitOptions] = useState<SplitOption[]>([]);
   const [splitKey, setSplitKey] = useState<string | null>(null);
   const [splitsLoading, setSplitsLoading] = useState(false);
@@ -64,6 +71,7 @@ export default function SettingsPage({ onProfileChanged }: { onProfileChanged: (
         setTargetWeeks(m.target_weeks ? String(m.target_weeks) : "");
         setEquipment(m.equipment);
         setExperience(m.experience);
+        setSessionLength(m.session_length);
         setSplitKey(m.split_key);
       })
       .catch((e: ApiError) => setError(e.message));
@@ -75,7 +83,7 @@ export default function SettingsPage({ onProfileChanged }: { onProfileChanged: (
     if (!programOpen || days.size === 0) return;
     setSplitsLoading(true);
     api
-      .splits(days.size)
+      .splits(days.size, sessionLength)
       .then((opts) => {
         setSplitOptions(opts);
         setSplitKey((prev) => (opts.some((o) => o.key === prev) ? prev : opts[0]?.key ?? null));
@@ -83,7 +91,7 @@ export default function SettingsPage({ onProfileChanged }: { onProfileChanged: (
       .catch(() => setSplitOptions([]))
       .finally(() => setSplitsLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [programOpen, days.size]);
+  }, [programOpen, days.size, sessionLength]);
 
   function toggle(idx: number) {
     setSaved(false);
@@ -131,7 +139,7 @@ export default function SettingsPage({ onProfileChanged }: { onProfileChanged: (
     setProgramBusy(true);
     setProgramMsg(null);
     try {
-      await api.setProgram(equipment, experience, Array.from(days), splitKey, {});
+      await api.setProgram(equipment, experience, Array.from(days), splitKey, {}, sessionLength);
       setProgramMsg({ text: "Программа пересобрана ✅", kind: "success" });
       hapticNotify("success");
       onProfileChanged();
@@ -252,7 +260,9 @@ export default function SettingsPage({ onProfileChanged }: { onProfileChanged: (
           </button>
         ) : (
           <div className="stack">
-            <div className="hint">Тип программы (доступные варианты зависят от числа дней тренировок выше)</div>
+            <div className="hint">Длительность тренировки</div>
+            <ChoiceRow options={SESSION_LENGTH_OPTIONS} value={sessionLength} onChange={setSessionLength} />
+            <div className="hint">Тип программы (доступные варианты зависят от числа дней тренировок и длительности выше)</div>
             {splitsLoading && <div className="hint">Загрузка вариантов…</div>}
             {splitOptions.map((o) => (
               <button
@@ -266,7 +276,7 @@ export default function SettingsPage({ onProfileChanged }: { onProfileChanged: (
                   {o.description}
                 </div>
                 <div className="hint" style={{ marginTop: 2 }}>
-                  {o.days_titles.join(" · ")}
+                  {o.days_titles.map((t, i) => `${t} (${o.exercise_counts[i]})`).join(" · ")}
                 </div>
               </button>
             ))}

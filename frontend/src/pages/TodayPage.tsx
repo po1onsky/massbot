@@ -6,7 +6,7 @@ import Stepper from "../components/Stepper";
 import { exerciseIcon } from "../exerciseIcons";
 import type { ExerciseKind, LogNote, TodayExercise, TodayPayload } from "../types";
 
-type SetsState = Record<string, { weight: string; reps: string[] }>;
+type SetsState = Record<string, { weights: string[]; reps: string[] }>;
 type Substitute = { name: string; kind: ExerciseKind; sets: number; reps: number };
 type SubstitutesState = Record<string, Substitute | undefined>;
 
@@ -36,8 +36,9 @@ function noteVariant(note: string): "success" | "warning" | "neutral" {
 function buildInitialSets(exercises: TodayExercise[]): SetsState {
   const state: SetsState = {};
   for (const e of exercises) {
+    const w = e.working_weight != null ? String(e.working_weight) : "";
     state[e.key] = {
-      weight: e.working_weight != null ? String(e.working_weight) : "",
+      weights: Array.from({ length: e.sets }, () => w),
       reps: Array.from({ length: e.sets }, () => String(e.reps)),
     };
   }
@@ -83,18 +84,28 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
     });
   }
 
-  function setWeight(key: string, value: string) {
-    setSets((prev) => ({ ...prev, [key]: { ...prev[key], weight: value } }));
+  function setWeight(key: string, idx: number, value: string) {
+    setSets((prev) => {
+      const cur = prev[key];
+      const weights = [...cur.weights];
+      weights[idx] = value;
+      return { ...prev, [key]: { ...cur, weights } };
+    });
   }
 
   function addSet(key: string) {
-    setSets((prev) => ({ ...prev, [key]: { ...prev[key], reps: [...prev[key].reps, ""] } }));
+    setSets((prev) => {
+      const cur = prev[key];
+      const lastWeight = cur.weights[cur.weights.length - 1] || "";
+      return { ...prev, [key]: { weights: [...cur.weights, lastWeight], reps: [...cur.reps, ""] } };
+    });
   }
 
   function removeSet(key: string) {
     setSets((prev) => {
       const reps = prev[key].reps.slice(0, -1);
-      return { ...prev, [key]: { ...prev[key], reps } };
+      const weights = prev[key].weights.slice(0, -1);
+      return { ...prev, [key]: { weights, reps } };
     });
   }
 
@@ -120,7 +131,10 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
     setSubstitutes((prev) => ({ ...prev, [e.key]: sub }));
     setSets((prev) => ({
       ...prev,
-      [e.key]: { weight: "", reps: Array.from({ length: sub.sets }, () => String(sub.reps)) },
+      [e.key]: {
+        weights: Array.from({ length: sub.sets }, () => ""),
+        reps: Array.from({ length: sub.sets }, () => String(sub.reps)),
+      },
     }));
     setPickerOpen((prev) => {
       const next = new Set(prev);
@@ -142,13 +156,34 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
       delete next[e.key];
       return next;
     });
+    const w = e.working_weight != null ? String(e.working_weight) : "";
     setSets((prev) => ({
       ...prev,
       [e.key]: {
-        weight: e.working_weight != null ? String(e.working_weight) : "",
+        weights: Array.from({ length: e.sets }, () => w),
         reps: Array.from({ length: e.sets }, () => String(e.reps)),
       },
     }));
+  }
+
+  async function switchVariant(key: string, variantIdx: number) {
+    haptic();
+    try {
+      const t = await api.setExerciseVariant(key, variantIdx);
+      const updated = t.exercises.find((e) => e.key === key);
+      if (!updated) return;
+      // Меняем только это упражнение — реps/веса, уже введённые по остальным
+      // упражнениям в форме логирования, трогать не нужно.
+      setToday((prev) => (prev ? { ...prev, exercises: prev.exercises.map((e) => (e.key === key ? updated : e)) } : prev));
+      setSets((prev) => {
+        const cur = prev[key];
+        if (cur) return prev; // подходы уже заполнены — не сбрасываем набранное
+        const w = updated.working_weight != null ? String(updated.working_weight) : "";
+        return { ...prev, [key]: { weights: Array.from({ length: updated.sets }, () => w), reps: Array.from({ length: updated.sets }, () => String(updated.reps)) } };
+      });
+    } catch (e) {
+      setError((e as ApiError).message);
+    }
   }
 
   async function submitLog() {
@@ -157,12 +192,16 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
     try {
       const entries = today.exercises
         .filter((e) => !skipped.has(e.key))
-        .map((e) => ({
-          key: e.key,
-          weight: parseFloat(sets[e.key].weight.replace(",", ".")) || 0,
-          reps: sets[e.key].reps.map((r) => parseInt(r, 10)).filter((n) => !isNaN(n) && n >= 0),
-          ...(substitutes[e.key] ? { substitute_name: substitutes[e.key]!.name } : {}),
-        }))
+        .map((e) => {
+          const reps = sets[e.key].reps.map((r) => parseInt(r, 10)).filter((n) => !isNaN(n) && n >= 0);
+          const weights = sets[e.key].weights.slice(0, reps.length).map((w) => parseFloat(w.replace(",", ".")) || 0);
+          return {
+            key: e.key,
+            weights,
+            reps,
+            ...(substitutes[e.key] ? { substitute_name: substitutes[e.key]!.name } : {}),
+          };
+        })
         .filter((e) => e.reps.length > 0);
       const res = await api.log(entries, Array.from(skipped));
       setNotes(res.notes);
@@ -245,6 +284,20 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
                 </div>
                 <div className="ex-target">{sub ? subTargetText(sub) : targetText(e)}</div>
 
+                {!isSkipped && !sub && e.variant_options.length > 1 && (
+                  <div className="choice-grid" style={{ marginTop: 6, marginBottom: 4 }}>
+                    {e.variant_options.map((opt) => (
+                      <button
+                        key={opt.idx}
+                        className={`choice-toggle small ${e.variant_idx === opt.idx ? "selected" : ""}`}
+                        onClick={() => switchVariant(e.key, opt.idx)}
+                      >
+                        {opt.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
+
                 {!isSkipped && pickerOpen.has(e.key) && (
                   <div className="card" style={{ padding: 10, margin: "8px 0" }}>
                     <div className="hint" style={{ marginBottom: 6 }}>Заменить на:</div>
@@ -284,8 +337,8 @@ export default function TodayPage({ onLogged }: { onLogged: () => void }) {
                           type="number"
                           inputMode="decimal"
                           placeholder="кг"
-                          value={sets[e.key].weight}
-                          onChange={(ev) => setWeight(e.key, ev.target.value)}
+                          value={sets[e.key].weights[idx] ?? ""}
+                          onChange={(ev) => setWeight(e.key, idx, ev.target.value)}
                         />
                       )}
                       <Stepper

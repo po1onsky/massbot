@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { api, ApiError } from "../api";
 import { hapticNotify } from "../telegram";
-import type { Equipment, Experience, Goal, OnboardingIn, Sex, SplitOption } from "../types";
+import type { Equipment, Experience, Goal, OnboardingIn, SessionLength, Sex, SplitOption } from "../types";
+
+const SESSION_LENGTH_OPTIONS: { value: SessionLength; label: string; hint: string }[] = [
+  { value: "short", label: "Коротко", hint: "~30 мин, база без добавок" },
+  { value: "medium", label: "Средне", hint: "~45 мин, + пара доп. упражнений" },
+  { value: "long", label: "Длинно", hint: "~60 мин, максимум объёма" },
+];
 
 const DAY_LABELS = ["Пн", "Вт", "Ср", "Чт", "Пт", "Сб", "Вс"];
 
@@ -70,6 +76,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
   const [targetWeeks, setTargetWeeks] = useState("");
 
   const [days, setDays] = useState<Set<number>>(new Set([0, 2, 4]));
+  const [sessionLength, setSessionLength] = useState<SessionLength>("medium");
   const [splitOptions, setSplitOptions] = useState<SplitOption[]>([]);
   const [splitKey, setSplitKey] = useState<string | null>(null);
   const [splitsLoading, setSplitsLoading] = useState(false);
@@ -90,7 +97,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
     if (days.size === 0) return;
     setSplitsLoading(true);
     api
-      .splits(days.size)
+      .splits(days.size, sessionLength)
       .then((opts) => {
         setSplitOptions(opts);
         setSplitKey((prev) => (opts.some((o) => o.key === prev) ? prev : opts[0]?.key ?? null));
@@ -98,7 +105,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
       .catch(() => setSplitOptions([]))
       .finally(() => setSplitsLoading(false));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [days.size]);
+  }, [days.size, sessionLength]);
 
   const cw = parseFloat(currentWeight.replace(",", "."));
   const tw = parseFloat(targetWeight.replace(",", "."));
@@ -200,6 +207,32 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
       ),
     },
     {
+      title: "Длительность тренировки",
+      valid: sessionLength !== null,
+      body: (
+        <div className="stack">
+          <div className="hint" style={{ marginBottom: 6 }}>
+            Сколько времени реально есть на одну тренировку — от этого зависит число упражнений в дне.
+          </div>
+          <div className="choice-grid">
+            {SESSION_LENGTH_OPTIONS.map((o) => (
+              <button
+                key={o.value}
+                className={`choice-toggle ${sessionLength === o.value ? "selected" : ""}`}
+                style={{ textAlign: "left" }}
+                onClick={() => setSessionLength(o.value)}
+              >
+                <div style={{ fontWeight: 600 }}>{o.label}</div>
+                <div className="hint" style={{ marginTop: 2 }}>
+                  {o.hint}
+                </div>
+              </button>
+            ))}
+          </div>
+        </div>
+      ),
+    },
+    {
       title: "Тип программы",
       valid: splitKey !== null,
       body: (
@@ -217,7 +250,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
                 {o.description}
               </div>
               <div className="hint" style={{ marginTop: 2 }}>
-                {o.days_titles.join(" · ")}
+                {o.days_titles.map((t, i) => `${t} (${o.exercise_counts[i]})`).join(" · ")}
               </div>
             </button>
           ))}
@@ -297,6 +330,7 @@ export default function Onboarding({ onDone }: { onDone: () => void }) {
         experience: experience as Experience,
         training_days: Array.from(days),
         split_key: splitKey,
+        session_length: sessionLength,
         starting_weights: Object.fromEntries(
           Object.entries(startingWeights)
             .map(([k, v]) => [k, parseFloat(v)])
